@@ -1,0 +1,62 @@
+{
+  "analysis": {
+    "title": "Game luck",
+    "subtitle": "Random opportunity quality and match results are shown separately",
+    "resultIsNotLuck": "Match points are not luck",
+    "resultHint": "Points include decisions, opponent behavior, and chance. Luck measures only the algorithm's defined random opportunities.",
+    "luckScore": "Luck score",
+    "actualPoints": "Match points",
+    "confidence": "Confidence",
+    "algorithm": "Algorithm",
+    "algorithmSelect": "Analysis algorithm",
+    "reanalyze": "Reanalyze",
+    "reanalyzing": "Reanalyzing…",
+    "olderVersion": "This result uses an older algorithm version. Reanalyze to update it.",
+    "modes": {"4p": "Four-player", "3p": "Three-player"},
+    "version": "Version",
+    "roundTrend": "Round trend",
+    "components": "Luck components",
+    "timeline": "Event detail",
+    "sequence": "Sequence",
+    "event": "Event",
+    "actual": "Actual value",
+    "expected": "Expected value",
+    "delta": "Random delta",
+    "zScore": "z-score",
+    "localStdDev": "Local standard deviation",
+    "roundPointSummary": "{{round}} P{{player}}: luck {{score}}, z {{zScore}}, random delta {{delta}}, confidence {{confidence}}, match points {{actualPoints}}",
+    "featureCandidateCount": "Candidate tiles: {{value}}",
+    "featureHandSize": "Hand size: {{value}}",
+    "featureShanten": "Shanten: {{value}}",
+    "featureDealer": "Dealer: {{value}}",
+    "featureReason": "Reason: {{value}}",
+    "feature": "{{name}}: {{value}}",
+    "component": "Component",
+    "excluded": "Excluded from main luck",
+    "noEvents": "Event details were not retained",
+    "initialHand": "Starting hand",
+    "selfDraw": "Self draw",
+    "doraReveal": "Dora reveal",
+    "specialRandom": "Special random event",
+    "opponentGift": "Opponent gift",
+    "positive": "Favorable",
+    "negative": "Unfavorable",
+    "neutral": "Near expectation"
+  },
+  "algorithms": {
+    "baselineV1": {
+      "name": "Opportunity quality baseline",
+      "description": "Compares each actual random opportunity with the weighted expectation of every legal outcome available at that moment."
+    }
+  },
+  "confidence": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High"
+  },
+  "tile": {
+    "red": "Red ",
+    "suits": {"m": "characters", "p": "circles", "s": "bamboo", "z": "honor"},
+    "ranks": {"1": "one", "2": "two", "3": "three", "4": "four", "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"}
+  }
+}

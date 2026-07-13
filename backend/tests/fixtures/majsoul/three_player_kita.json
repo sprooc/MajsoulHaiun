@@ -1,0 +1,27 @@
+{
+  "external_id": "fixture-3p",
+  "accounts": [
+    {"seat": 0, "nickname": "East"},
+    {"seat": 1, "nickname": "South"},
+    {"seat": 2, "nickname": "West"}
+  ],
+  "rules": {"player_count": 3, "tsumo_loss": false},
+  "final_scores": [42000, 35000, 28000],
+  "final_ranks": [1, 2, 3],
+  "rounds": [
+    {
+      "wind": "east",
+      "hand": 1,
+      "dealer": 0,
+      "honba": 0,
+      "riichi_sticks": 0,
+      "starting_scores": [35000, 35000, 35000],
+      "actions": [
+        {"name": ".lq.RecordNewRound", "data": {"dealer": 0, "scores": [35000, 35000, 35000], "dora": "9m"}, "sequence": 0},
+        {"name": ".lq.RecordBaBei", "data": {"seat": 1}, "sequence": 1},
+        {"name": ".lq.RecordMystery", "data": {"value": 7}, "sequence": 2},
+        {"name": ".lq.RecordNoTile", "data": {"tenpai": [0, 1], "delta_scores": [1500, 1500, -3000]}, "sequence": 3}
+      ]
+    }
+  ]
+}

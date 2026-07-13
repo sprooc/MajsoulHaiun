@@ -1,0 +1,48 @@
+{
+  "workspace": {
+    "kicker": "本地牌谱工作台",
+    "title": "牌运",
+    "description": "搜索公开对局，或导入自己的牌谱。原始数据只保存在运行服务的机器上。"
+  },
+  "playerSearch": {
+    "title": "搜索玩家",
+    "description": "通过 Amae-Koromo 的公开索引查找四人或三人麻将记录。",
+    "name": "玩家名称",
+    "placeholder": "输入雀魂昵称",
+    "submit": "搜索玩家",
+    "fourPlayer": "四人麻将",
+    "threePlayer": "三人麻将",
+    "loading": "正在搜索…",
+    "empty": "没有找到匹配玩家",
+    "recent": "查看近期牌谱",
+    "coverage": "公开索引可能有延迟；完整牌谱获取取决于匿名接口是否可用。"
+  },
+  "gameTable": {
+    "title": "近期对局",
+    "date": "时间",
+    "mode": "模式",
+    "players": "玩家",
+    "scores": "终局点数",
+    "analyze": "导入并分析",
+    "loadMore": "加载更多",
+    "empty": "暂无公开对局"
+  },
+  "replayImport": {
+    "title": "导入牌谱",
+    "description": "支持雀魂分享链接、牌谱 ID、解码 JSON 和牌运规范 JSON。",
+    "locator": "分享链接或牌谱 ID",
+    "locatorPlaceholder": "粘贴雀魂牌谱链接",
+    "file": "牌谱文件",
+    "chooseFile": "选择文件",
+    "submitLocator": "导入链接",
+    "submitFile": "导入文件",
+    "analyze": "开始分析",
+    "fileLimit": "单个文件最大 32 MiB",
+    "success": "牌谱已保存到本地",
+    "parseFailed": "牌谱已保存，但内容无法解析；请检查文件格式。",
+    "analyzing": "正在计算牌运…",
+    "analysisFailed": "牌谱已保存，但分析未能完成。",
+    "fetchUnavailable": "匿名原始牌谱暂不可用。公开对局信息仍可查看，请改用本地牌谱文件导入。",
+    "error": "导入失败，请检查文件或链接后重试。"
+  }
+}

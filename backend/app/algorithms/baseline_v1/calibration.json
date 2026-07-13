@@ -1,0 +1,26 @@
+{
+  "3p-dealer": {
+    "mean": 0.504355233,
+    "samples": 50000,
+    "seed": 20260713,
+    "standard_deviation": 0.066298026
+  },
+  "3p-nondealer": {
+    "mean": 0.46552913,
+    "samples": 50000,
+    "seed": 20260713,
+    "standard_deviation": 0.065062042
+  },
+  "4p-dealer": {
+    "mean": 0.49142732,
+    "samples": 50000,
+    "seed": 20260713,
+    "standard_deviation": 0.067149735
+  },
+  "4p-nondealer": {
+    "mean": 0.455649053,
+    "samples": 50000,
+    "seed": 20260713,
+    "standard_deviation": 0.065988612
+  }
+}

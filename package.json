@@ -1,0 +1,10 @@
+{
+  "name": "haiun",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "test": "npm --prefix frontend test",
+    "build": "npm --prefix frontend run build",
+    "e2e": "npm --prefix frontend run e2e"
+  }
+}

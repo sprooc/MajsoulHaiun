@@ -1,0 +1,22 @@
+{
+  "app": {
+    "title": "牌运",
+    "romanized": "HAIUN",
+    "tagline": "把偶然拆成可以复盘的证据",
+    "navLabel": "主导航",
+    "nav": {
+      "search": "牌谱",
+      "analysis": "分析",
+      "settings": "设置"
+    }
+  },
+  "language": {
+    "english": "English",
+    "chinese": "中文"
+  },
+  "health": {
+    "checking": "正在连接本地分析服务",
+    "online": "本地服务已连接",
+    "offline": "本地服务未连接"
+  }
+}

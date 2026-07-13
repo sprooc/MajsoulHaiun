@@ -1,0 +1,48 @@
+{
+  "workspace": {
+    "kicker": "Local replay workspace",
+    "title": "Luck Analysis",
+    "description": "Search public games or import your own replay. Raw data stays on the machine running the service."
+  },
+  "playerSearch": {
+    "title": "Search players",
+    "description": "Find four- or three-player records through the public Amae-Koromo index.",
+    "name": "Player name",
+    "placeholder": "Enter a Mahjong Soul nickname",
+    "submit": "Search players",
+    "fourPlayer": "Four-player",
+    "threePlayer": "Three-player",
+    "loading": "Searching…",
+    "empty": "No matching players found",
+    "recent": "View recent games",
+    "coverage": "The public index may lag; full replay access depends on anonymous upstream availability."
+  },
+  "gameTable": {
+    "title": "Recent games",
+    "date": "Date",
+    "mode": "Mode",
+    "players": "Players",
+    "scores": "Final scores",
+    "analyze": "Import and analyze",
+    "loadMore": "Load more",
+    "empty": "No public games available"
+  },
+  "replayImport": {
+    "title": "Import replay",
+    "description": "Supports Mahjong Soul share links, replay IDs, decoded JSON, and Haiun canonical JSON.",
+    "locator": "Share link or replay ID",
+    "locatorPlaceholder": "Paste a Mahjong Soul replay link",
+    "file": "Replay file",
+    "chooseFile": "Choose file",
+    "submitLocator": "Import link",
+    "submitFile": "Import file",
+    "analyze": "Analyze",
+    "fileLimit": "Maximum file size: 32 MiB",
+    "success": "Replay saved locally",
+    "parseFailed": "The replay was saved, but its contents could not be parsed. Check the file format.",
+    "analyzing": "Calculating luck…",
+    "analysisFailed": "The replay was saved, but analysis could not complete.",
+    "fetchUnavailable": "Anonymous raw replay access is unavailable. Public metadata still works; import a local replay file instead.",
+    "error": "Import failed. Check the file or link and try again."
+  }
+}

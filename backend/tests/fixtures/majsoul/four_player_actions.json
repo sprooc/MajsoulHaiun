@@ -1,0 +1,29 @@
+{
+  "external_id": "fixture-4p",
+  "accounts": [
+    {"seat": 0, "nickname": "East"},
+    {"seat": 1, "nickname": "South"},
+    {"seat": 2, "nickname": "West"},
+    {"seat": 3, "nickname": "North"}
+  ],
+  "rules": {"player_count": 4},
+  "final_scores": [31200, 27400, 23300, 18100],
+  "final_ranks": [1, 2, 3, 4],
+  "rounds": [
+    {
+      "wind": "east",
+      "hand": 1,
+      "dealer": 0,
+      "honba": 0,
+      "riichi_sticks": 0,
+      "starting_scores": [25000, 25000, 25000, 25000],
+      "actions": [
+        {"name": ".lq.RecordDealTile", "data": {"seat": 1, "tile": "2p"}, "sequence": 2},
+        {"name": ".lq.RecordNewRound", "data": {"dealer": 0, "scores": [25000, 25000, 25000, 25000], "dora": "1z"}, "sequence": 0},
+        {"name": ".lq.RecordDiscardTile", "data": {"seat": 1, "tile": "9s", "moqie": false}, "sequence": 3},
+        {"name": ".lq.RecordDealTile", "data": {"seat": 0, "tile": "0m"}, "sequence": 1},
+        {"name": ".lq.RecordHule", "data": {"winners": [0], "loser": 1, "delta_scores": [6200, -6200, 0, 0]}, "sequence": 4}
+      ]
+    }
+  ]
+}

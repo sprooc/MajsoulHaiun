@@ -1,0 +1,62 @@
+{
+  "analysis": {
+    "title": "对局牌运",
+    "subtitle": "随机机会质量与实战结果分开呈现",
+    "resultIsNotLuck": "实战点数不等于牌运",
+    "resultHint": "点数包含选择、对手行为和随机机会；牌运只衡量算法定义的随机机会偏差。",
+    "luckScore": "牌运分数",
+    "actualPoints": "实战点数",
+    "confidence": "置信度",
+    "algorithm": "算法",
+    "algorithmSelect": "分析算法",
+    "reanalyze": "重新分析",
+    "reanalyzing": "正在重新分析…",
+    "olderVersion": "当前结果来自旧算法版本，可重新分析更新。",
+    "modes": {"4p": "四人麻将", "3p": "三人麻将"},
+    "version": "版本",
+    "roundTrend": "各局趋势",
+    "components": "运气分量",
+    "timeline": "事件明细",
+    "sequence": "序号",
+    "event": "事件",
+    "actual": "实际价值",
+    "expected": "期望价值",
+    "delta": "随机偏差",
+    "zScore": "z-score",
+    "localStdDev": "局部标准差",
+    "roundPointSummary": "{{round}} P{{player}}：牌运 {{score}}，z {{zScore}}，随机偏差 {{delta}}，置信度 {{confidence}}，实战点数 {{actualPoints}}",
+    "featureCandidateCount": "候选牌数：{{value}}",
+    "featureHandSize": "手牌张数：{{value}}",
+    "featureShanten": "向听数：{{value}}",
+    "featureDealer": "庄家：{{value}}",
+    "featureReason": "原因：{{value}}",
+    "feature": "{{name}}：{{value}}",
+    "component": "分量",
+    "excluded": "不计入主牌运",
+    "noEvents": "未保留事件明细",
+    "initialHand": "配牌",
+    "selfDraw": "自摸进张",
+    "doraReveal": "宝牌翻开",
+    "specialRandom": "特殊随机事件",
+    "opponentGift": "对手赠牌",
+    "positive": "偏幸运",
+    "negative": "偏不利",
+    "neutral": "接近期望"
+  },
+  "algorithms": {
+    "baselineV1": {
+      "name": "机会质量基线",
+      "description": "比较实际随机机会与当时所有合法候选结果的加权期望。"
+    }
+  },
+  "confidence": {
+    "low": "低",
+    "medium": "中",
+    "high": "高"
+  },
+  "tile": {
+    "red": "赤",
+    "suits": {"m": "万", "p": "筒", "s": "索", "z": "字"},
+    "ranks": {"1": "一", "2": "二", "3": "三", "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九"}
+  }
+}

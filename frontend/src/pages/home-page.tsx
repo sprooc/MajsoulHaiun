@@ -1,0 +1,120 @@
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  ApiError,
+  createAnalysis,
+  importReplayLocator,
+  listPlayerGames,
+  type GameLuckAnalysis,
+  type RemoteGame,
+  type RemotePlayer,
+  type ReplayImportResult,
+} from "../api/client";
+import { GameTable } from "../components/game-table";
+import { PlayerSearch } from "../components/player-search";
+import { ReplayImport } from "../components/replay-import";
+import { GameAnalysisPage } from "./game-analysis-page";
+
+
+export function HomePage() {
+  const { t } = useTranslation("search");
+  const [selected, setSelected] = useState<RemotePlayer | null>(null);
+  const [analysis, setAnalysis] = useState<GameLuckAnalysis | null>(null);
+  const [analysisGameId, setAnalysisGameId] = useState<string | null>(null);
+  const [analysisState, setAnalysisState] = useState<"idle" | "loading" | "error">("idle");
+  const [games, setGames] = useState<RemoteGame[]>([]);
+  const [gamesState, setGamesState] = useState<"idle" | "loading" | "error">("idle");
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [recentImportMessage, setRecentImportMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selected) return;
+    const controller = new AbortController();
+    setGamesState("loading");
+    setGames([]);
+    setNextCursor(null);
+    void listPlayerGames(selected, undefined, controller.signal)
+      .then((page) => {
+        setGames(page.games);
+        setNextCursor(page.nextCursor ?? null);
+        setGamesState("idle");
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setGamesState("error");
+      });
+    return () => controller.abort();
+  }, [selected]);
+
+  async function loadMoreGames() {
+    if (!selected || nextCursor === null) return;
+    setLoadingMore(true);
+    try {
+      const page = await listPlayerGames(selected, nextCursor, new AbortController().signal);
+      setGames((current) => [...current, ...page.games]);
+      setNextCursor(page.nextCursor ?? null);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function handleImported(result: ReplayImportResult) {
+    if (!result.gameId) {
+      setRecentImportMessage(t("replayImport.error"));
+      return;
+    }
+    setAnalysisState("loading");
+    try {
+      const envelope = await createAnalysis(result.gameId);
+      if (!envelope.result) throw new Error("analysis result missing");
+      setAnalysisGameId(result.gameId);
+      setAnalysis(envelope.result);
+      setAnalysisState("idle");
+    } catch {
+      setAnalysisState("error");
+    }
+  }
+
+  async function importRecentGame(game: RemoteGame) {
+    setRecentImportMessage(null);
+    try {
+      const result = await importReplayLocator(game.uuid);
+      await handleImported(result);
+    } catch (error) {
+      setRecentImportMessage(
+        error instanceof ApiError && error.code === "REPLAY_FETCH_UNAVAILABLE"
+          ? t("replayImport.fetchUnavailable")
+          : t("replayImport.error"),
+      );
+    }
+  }
+
+  if (analysis) return <GameAnalysisPage analysis={analysis} gameId={analysisGameId ?? undefined} onAnalysis={setAnalysis} />;
+  return (
+    <main className="workspace">
+      <header className="workspace-intro">
+        <p>{t("workspace.kicker")}</p>
+        <h1>{t("workspace.title")}</h1>
+        <span>{t("workspace.description")}</span>
+        <div className="workspace-glyph" aria-hidden="true"><i>牌</i><i>運</i></div>
+      </header>
+      <PlayerSearch onSelect={setSelected} />
+      {selected && <p className="selection-strip"><strong>{selected.nickname}</strong><span>{selected.mode}</span><small>#{selected.externalId}</small></p>}
+      {selected && (
+        <section className="work-section" aria-labelledby="recent-games-title">
+          <div className="section-heading">
+            <div><p className="section-index">02</p><h2 id="recent-games-title">{t("gameTable.title")}</h2></div>
+            <p>{selected.nickname} · {selected.mode}</p>
+          </div>
+          {gamesState === "loading" ? <p className="empty-state">{t("playerSearch.loading")}</p> : <GameTable games={games} onImport={(game) => void importRecentGame(game)} />}
+          {gamesState === "error" && <p className="inline-error">{t("replayImport.error")}</p>}
+          {recentImportMessage && <p className="inline-error" role="status">{recentImportMessage}</p>}
+          {nextCursor !== null && <button className="load-more" type="button" disabled={loadingMore} onClick={() => void loadMoreGames()}>{t("gameTable.loadMore")}</button>}
+        </section>
+      )}
+      <ReplayImport onImported={(result) => void handleImported(result)} />
+      {analysisState === "loading" && <p className="analysis-progress" role="status">{t("replayImport.analyzing")}</p>}
+      {analysisState === "error" && <p className="inline-error" role="alert">{t("replayImport.analysisFailed")}</p>}
+    </main>
+  );
+}

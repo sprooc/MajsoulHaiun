@@ -1,0 +1,22 @@
+{
+  "app": {
+    "title": "Luck Analysis",
+    "romanized": "HAIUN",
+    "tagline": "Turn chance into evidence you can review",
+    "navLabel": "Primary navigation",
+    "nav": {
+      "search": "Replays",
+      "analysis": "Analysis",
+      "settings": "Settings"
+    }
+  },
+  "language": {
+    "english": "English",
+    "chinese": "中文"
+  },
+  "health": {
+    "checking": "Connecting to the local analyzer",
+    "online": "Local service connected",
+    "offline": "Local service unavailable"
+  }
+}
