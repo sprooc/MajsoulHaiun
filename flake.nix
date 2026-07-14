@@ -1,5 +1,5 @@
 {
-  description = "牌运 Haiun development and runtime environment";
+  description = "Haiun development and runtime environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

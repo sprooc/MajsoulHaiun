@@ -3,7 +3,7 @@
 ## Project Identity
 
 - The Chinese product name is **牌运**.
-- **Haiun** is the Japanese reading of “牌運”. Never call the product “海运”.
+- **Haiun** is the Japanese reading of “牌運”. 
 - Keep user-facing Chinese and English terminology consistent with the existing locale files.
 
 ## Essential Commands
