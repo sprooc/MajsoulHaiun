@@ -24,5 +24,5 @@ def test_explicit_cors_allowlist_is_honored(tmp_path):
 
 def test_application_schema_contains_no_credential_fields(client):
     schema = client.get("/openapi.json").text.lower()
-    for forbidden in ("password", "oauth_token", "email_code", "browser_session"):
+    for forbidden in ("password", "oauth_token", "email_code", "browser_session", "access_token"):
         assert forbidden not in schema

@@ -6,7 +6,11 @@ import pytest
 from app.errors import AppError
 from app.repositories.replay_repository import RawReplayRecord
 from app.services.import_service import ImportService
-from app.sources.majsoul.fetcher import ReplayFetchUnavailable
+from app.sources.majsoul.fetcher import (
+    ReplayFetchConfigurationError,
+    ReplayFetchRemoteError,
+    ReplayFetchUnavailable,
+)
 
 
 @pytest.fixture
@@ -38,6 +42,26 @@ async def test_remote_import_maps_fetch_unavailable(import_service, replay_fetch
     with pytest.raises(AppError) as error:
         await import_service.import_remote("260307-76323960-cf3c-494e-be24-26dd6ba81c98")
     assert error.value.code == "REPLAY_FETCH_UNAVAILABLE"
+
+
+async def test_remote_import_maps_missing_server_configuration(import_service, replay_fetcher):
+    replay_fetcher.fetch.side_effect = ReplayFetchConfigurationError()
+
+    with pytest.raises(AppError) as error:
+        await import_service.import_remote("260307-76323960-cf3c-494e-be24-26dd6ba81c98")
+
+    assert error.value.code == "REPLAY_FETCH_NOT_CONFIGURED"
+    assert error.value.status_code == 503
+
+
+async def test_remote_import_maps_remote_gateway_failure(import_service, replay_fetcher):
+    replay_fetcher.fetch.side_effect = ReplayFetchRemoteError()
+
+    with pytest.raises(AppError) as error:
+        await import_service.import_remote("260307-76323960-cf3c-494e-be24-26dd6ba81c98")
+
+    assert error.value.code == "REPLAY_FETCH_FAILED"
+    assert error.value.status_code == 502
 
 
 async def test_remote_import_returns_cached_replay_without_fetching(import_service, repository, replay_fetcher):

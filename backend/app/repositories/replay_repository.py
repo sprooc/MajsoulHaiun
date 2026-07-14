@@ -142,6 +142,14 @@ class ReplayRepository:
         model = await self.session.get(CanonicalGameModel, game_id)
         return CanonicalGame.model_validate(model.game_json) if model else None
 
+    async def get_game_id_for_replay(self, replay_id: UUID, schema_version: str) -> UUID | None:
+        return await self.session.scalar(
+            select(CanonicalGameModel.id).where(
+                CanonicalGameModel.raw_replay_id == replay_id,
+                CanonicalGameModel.schema_version == schema_version,
+            )
+        )
+
     async def get_game_model(self, game_id: UUID) -> CanonicalGameModel | None:
         return await self.session.scalar(
             select(CanonicalGameModel)

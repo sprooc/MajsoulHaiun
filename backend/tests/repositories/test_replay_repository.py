@@ -93,6 +93,7 @@ async def test_raw_bytes_and_canonical_game_are_stored_separately(replay_reposit
     stored_game = await replay_repository.get_game(game_id)
     assert stored_raw is not None and stored_raw.payload == b"raw"
     assert stored_game == game
+    assert await replay_repository.get_game_id_for_replay(replay_id, game.schema_version) == game_id
 
 
 async def test_replay_can_be_deleted_with_derived_canonical_data(replay_repository):
