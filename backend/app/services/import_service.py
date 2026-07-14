@@ -27,6 +27,9 @@ class ImportService:
             locator = MajsoulLocator.parse(value)
         except ValueError as exc:
             raise AppError("INVALID_REPLAY_LOCATOR", "Invalid Mahjong Soul replay link or ID.", status_code=422) from exc
+        cached = await self.repository.get_by_source_external_id("majsoul", locator.record_id)
+        if cached is not None:
+            return cached.id
         try:
             payload = await self.replay_fetcher.fetch(locator)
         except ReplayFetchUnavailable as exc:

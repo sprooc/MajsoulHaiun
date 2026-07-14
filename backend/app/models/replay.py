@@ -9,7 +9,10 @@ from app.db import Base
 
 class RawReplayModel(Base):
     __tablename__ = "raw_replays"
-    __table_args__ = (UniqueConstraint("sha256", name="uq_raw_replays_sha256"),)
+    __table_args__ = (
+        UniqueConstraint("sha256", name="uq_raw_replays_sha256"),
+        UniqueConstraint("source", "external_id", name="uq_raw_replays_source_external"),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     source: Mapped[str] = mapped_column(String(64), index=True)

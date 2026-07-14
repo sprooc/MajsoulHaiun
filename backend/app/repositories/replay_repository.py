@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -35,6 +36,14 @@ class ReplayRepository:
         filename: str | None = None,
         content_type: str | None = None,
     ) -> UUID:
+        existing = await self.session.scalar(
+            select(RawReplayModel).where(
+                RawReplayModel.source == source,
+                RawReplayModel.external_id == external_id,
+            )
+        )
+        if existing:
+            return existing.id
         digest = hashlib.sha256(payload).hexdigest()
         existing = await self.session.scalar(select(RawReplayModel).where(RawReplayModel.sha256 == digest))
         if existing:
@@ -48,7 +57,21 @@ class ReplayRepository:
             content_type=content_type,
         )
         self.session.add(model)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.session.scalar(
+                select(RawReplayModel).where(
+                    RawReplayModel.source == source,
+                    RawReplayModel.external_id == external_id,
+                )
+            )
+            if existing is None:
+                existing = await self.session.scalar(select(RawReplayModel).where(RawReplayModel.sha256 == digest))
+            if existing is None:
+                raise
+            return existing.id
         return model.id
 
     async def get(self, replay_id: UUID) -> RawReplayRecord | None:
@@ -67,6 +90,15 @@ class ReplayRepository:
 
     async def get_by_sha256(self, sha256: str) -> RawReplayRecord | None:
         model = await self.session.scalar(select(RawReplayModel).where(RawReplayModel.sha256 == sha256))
+        return await self.get(model.id) if model else None
+
+    async def get_by_source_external_id(self, source: str, external_id: str) -> RawReplayRecord | None:
+        model = await self.session.scalar(
+            select(RawReplayModel).where(
+                RawReplayModel.source == source,
+                RawReplayModel.external_id == external_id,
+            )
+        )
         return await self.get(model.id) if model else None
 
     async def put_canonical_game(self, replay_id: UUID, game: CanonicalGame) -> UUID:
