@@ -22,7 +22,11 @@ class LocatorImport(BaseModel):
 async def _service(request: Request):
     session = request.app.state.session_factory()
     repository = ReplayRepository(session)
-    return session, repository, ImportService(repository, MajsoulReplayFetcher())
+    fetcher = MajsoulReplayFetcher(
+        request.app.state.settings.majsoul_config_path,
+        request.app.state.http_client,
+    )
+    return session, repository, ImportService(repository, fetcher)
 
 
 async def _store_canonical_game(
@@ -31,6 +35,11 @@ async def _store_canonical_game(
     payload: bytes,
 ) -> dict[str, str]:
     response = {"replayId": str(replay_id)}
+    schema_version = str(CanonicalGame.model_fields["schema_version"].default)
+    existing_game_id = await repository.get_game_id_for_replay(replay_id, schema_version)
+    if existing_game_id is not None:
+        response["gameId"] = str(existing_game_id)
+        return response
     try:
         decoded = decode_majsoul(payload)
         if "schema_version" in decoded and "players" in decoded:
@@ -65,7 +74,16 @@ async def import_locator(request: Request, body: LocatorImport) -> dict[str, str
         replay = await repository.get(replay_id)
         if replay is None:
             raise AppError("REPLAY_NOT_FOUND", "Imported replay was not found.", status_code=500)
-        return await _store_canonical_game(repository, replay_id, replay.payload)
+        response = await _store_canonical_game(repository, replay_id, replay.payload)
+        if "parseErrorCode" in response:
+            await repository.delete(replay_id)
+            raise AppError(
+                response["parseErrorCode"],
+                "Fetched Mahjong Soul replay could not be parsed.",
+                status_code=422,
+                parameters={"recordId": replay.external_id},
+            )
+        return response
     finally:
         await session.close()
 

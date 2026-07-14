@@ -20,6 +20,39 @@ MODE_IDS = {
 EARLIEST_TIMESTAMP_MS = 1262304000000
 
 
+def _integer_list(value: object) -> list[int]:
+    if not isinstance(value, list) or not all(isinstance(item, int) and not isinstance(item, bool) for item in value):
+        return []
+    return value
+
+
+def _player_values(players: list[dict[str, object]], *keys: str) -> list[int]:
+    values: list[int] = []
+    for player in players:
+        value = next((player[key] for key in keys if key in player), None)
+        if not isinstance(value, int) or isinstance(value, bool):
+            return []
+        values.append(value)
+    return values
+
+
+def _ranks(item: dict[str, object], players: list[dict[str, object]], scores: list[int]) -> list[int]:
+    for key in ("ranks", "finalRanks", "final_ranks"):
+        published = _integer_list(item.get(key))
+        if len(published) == len(players):
+            return published
+    published = _player_values(players, "rank", "finalRank", "final_rank")
+    if len(published) == len(players):
+        return published
+    if len(scores) != len(players):
+        return []
+    ordered_seats = sorted(range(len(scores)), key=lambda seat: (-scores[seat], seat))
+    ranks = [0] * len(scores)
+    for rank, seat in enumerate(ordered_seats, start=1):
+        ranks[seat] = rank
+    return ranks
+
+
 class AmaeKoromoSource:
     id = "amae-koromo"
     capabilities = frozenset({SourceCapability.SEARCH_PLAYERS, SourceCapability.LIST_PLAYER_GAMES})
@@ -78,6 +111,11 @@ class AmaeKoromoSource:
         for item in payload:
             if not isinstance(item, dict):
                 continue
+            players = [player for player in item.get("players", []) if isinstance(player, dict)]
+            scores = _integer_list(item.get("scores")) or _player_values(players, "score")
+            grading_scores = _integer_list(item.get("gradingScore")) or _player_values(
+                players, "gradingScore", "grading_score"
+            )
             games.append(
                 RemoteGame(
                     source=self.id,
@@ -87,9 +125,10 @@ class AmaeKoromoSource:
                     mode_id=item.get("modeId"),
                     started_at=item.get("startTime"),
                     ended_at=item.get("endTime"),
-                    players=item.get("players") if isinstance(item.get("players"), list) else [],
-                    scores=item.get("scores") if isinstance(item.get("scores"), list) else [],
-                    grading_scores=item.get("gradingScore") if isinstance(item.get("gradingScore"), list) else [],
+                    players=players,
+                    scores=scores,
+                    ranks=_ranks(item, players, scores),
+                    grading_scores=grading_scores,
                 )
             )
         next_cursor = None

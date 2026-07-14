@@ -36,7 +36,7 @@ class Round(BaseModel):
 
 
 class CanonicalGame(BaseModel):
-    schema_version: str = "1.0.0"
+    schema_version: str = "1.0.1"
     source: str = "unknown"
     external_id: str
     rules: RuleSet

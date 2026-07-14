@@ -3,7 +3,13 @@ import { useTranslation } from "react-i18next";
 import { ApiError, importReplayFile, importReplayLocator, type ReplayImportResult } from "../api/client";
 
 
-export function ReplayImport({ onImported }: { onImported?: (result: ReplayImportResult) => void }) {
+interface ReplayImportProps {
+  onImportStarted?: (source: "majsoul" | "local-file") => string | undefined;
+  onImported?: (result: ReplayImportResult, provisionalId?: string) => void;
+  onImportFailed?: (provisionalId?: string) => void;
+}
+
+export function ReplayImport({ onImportStarted, onImported, onImportFailed }: ReplayImportProps) {
   const { t } = useTranslation("search");
   const [locator, setLocator] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -11,15 +17,18 @@ export function ReplayImport({ onImported }: { onImported?: (result: ReplayImpor
 
   async function importLocator(event: FormEvent) {
     event.preventDefault();
+    const provisionalId = onImportStarted?.("majsoul");
     try {
       const result = await importReplayLocator(locator);
       if (result.parseErrorCode || !result.gameId) {
         setMessage(t("replayImport.parseFailed"));
+        onImportFailed?.(provisionalId);
         return;
       }
       setMessage(t("replayImport.success"));
-      onImported?.(result);
+      onImported?.(result, provisionalId);
     } catch (error) {
+      onImportFailed?.(provisionalId);
       setMessage(error instanceof ApiError && error.code === "REPLAY_FETCH_UNAVAILABLE"
         ? t("replayImport.fetchUnavailable")
         : t("replayImport.error"));
@@ -32,15 +41,18 @@ export function ReplayImport({ onImported }: { onImported?: (result: ReplayImpor
       setMessage(t("replayImport.error"));
       return;
     }
+    const provisionalId = onImportStarted?.("local-file");
     try {
       const result = await importReplayFile(file);
       if (result.parseErrorCode || !result.gameId) {
         setMessage(t("replayImport.parseFailed"));
+        onImportFailed?.(provisionalId);
         return;
       }
       setMessage(t("replayImport.success"));
-      onImported?.(result);
+      onImported?.(result, provisionalId);
     } catch {
+      onImportFailed?.(provisionalId);
       setMessage(t("replayImport.error"));
     }
   }

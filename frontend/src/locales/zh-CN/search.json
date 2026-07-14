@@ -15,7 +15,7 @@
     "loading": "正在搜索…",
     "empty": "没有找到匹配玩家",
     "recent": "查看近期牌谱",
-    "coverage": "公开索引可能有延迟；完整牌谱获取取决于匿名接口是否可用。"
+    "coverage": "公开索引可能有延迟；完整牌谱会按后端配置的雀魂账号顺序尝试获取。"
   },
   "gameTable": {
     "title": "近期对局",
@@ -23,7 +23,8 @@
     "mode": "模式",
     "players": "玩家",
     "scores": "终局点数",
-    "analyze": "导入并分析",
+    "ranks": "排位",
+    "analyze": "开始分析",
     "loadMore": "加载更多",
     "empty": "暂无公开对局"
   },
@@ -34,15 +35,16 @@
     "locatorPlaceholder": "粘贴雀魂牌谱链接",
     "file": "牌谱文件",
     "chooseFile": "选择文件",
-    "submitLocator": "导入链接",
-    "submitFile": "导入文件",
+    "submitLocator": "导入链接并开始分析",
+    "submitFile": "导入文件并开始分析",
     "analyze": "开始分析",
     "fileLimit": "单个文件最大 32 MiB",
     "success": "牌谱已保存到本地",
     "parseFailed": "牌谱已保存，但内容无法解析；请检查文件格式。",
     "analyzing": "正在计算牌运…",
+    "queued": "已加入分析列表，请等待分析完成。",
     "analysisFailed": "牌谱已保存，但分析未能完成。",
-    "fetchUnavailable": "匿名原始牌谱暂不可用。公开对局信息仍可查看，请改用本地牌谱文件导入。",
+    "fetchUnavailable": "已配置的雀魂账号均无法获取此牌谱。请检查牌谱权限，或改用本地牌谱文件导入。",
     "error": "导入失败，请检查文件或链接后重试。"
   }
 }

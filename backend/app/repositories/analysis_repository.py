@@ -30,6 +30,13 @@ class AnalysisRepository:
     async def get(self, analysis_id: UUID) -> AnalysisModel | None:
         return await self.session.get(AnalysisModel, analysis_id)
 
+    async def list_all(self) -> list[AnalysisModel]:
+        return list(
+            await self.session.scalars(
+                select(AnalysisModel).order_by(AnalysisModel.created_at.desc())
+            )
+        )
+
     async def add(self, model: AnalysisModel) -> AnalysisModel:
         self.session.add(model)
         await self.session.commit()

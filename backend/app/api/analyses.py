@@ -1,11 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, BackgroundTasks, Request
 from pydantic import AliasGenerator, BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from app.domain.analysis import AnalysisOptions
-from app.errors import AppError
 from app.repositories.analysis_repository import AnalysisRepository
 from app.repositories.replay_repository import ReplayRepository
 from app.services.analysis_service import AnalysisEnvelope, AnalysisService
@@ -39,8 +38,7 @@ async def list_algorithms(request: Request) -> list[dict[str, object]]:
     ]
 
 
-@router.post("/analyses", response_model=AnalysisEnvelope, response_model_by_alias=True)
-async def create_analysis(request: Request, body: AnalysisRequest) -> AnalysisEnvelope:
+async def _process_analysis(request: Request, analysis_id: UUID, options: AnalysisOptions) -> None:
     session = request.app.state.session_factory()
     try:
         service = AnalysisService(
@@ -48,7 +46,44 @@ async def create_analysis(request: Request, body: AnalysisRequest) -> AnalysisEn
             AnalysisRepository(session),
             request.app.state.algorithm_registry,
         )
-        return await service.analyze(body.game_id, body.algorithm_id, body.options)
+        await service.process(analysis_id, options)
+    except Exception:
+        return
+    finally:
+        await session.close()
+
+
+@router.post("/analyses", response_model=AnalysisEnvelope, response_model_by_alias=True, status_code=202)
+async def create_analysis(
+    request: Request,
+    body: AnalysisRequest,
+    background_tasks: BackgroundTasks,
+) -> AnalysisEnvelope:
+    session = request.app.state.session_factory()
+    try:
+        service = AnalysisService(
+            ReplayRepository(session),
+            AnalysisRepository(session),
+            request.app.state.algorithm_registry,
+        )
+        envelope = await service.enqueue(body.game_id, body.algorithm_id, body.options)
+        if envelope.status == "pending":
+            background_tasks.add_task(_process_analysis, request, envelope.id, body.options)
+        return envelope
+    finally:
+        await session.close()
+
+
+@router.get("/analyses", response_model=list[AnalysisEnvelope], response_model_by_alias=True)
+async def list_analyses(request: Request) -> list[AnalysisEnvelope]:
+    session = request.app.state.session_factory()
+    try:
+        service = AnalysisService(
+            ReplayRepository(session),
+            AnalysisRepository(session),
+            request.app.state.algorithm_registry,
+        )
+        return await service.list()
     finally:
         await session.close()
 
@@ -57,9 +92,11 @@ async def create_analysis(request: Request, body: AnalysisRequest) -> AnalysisEn
 async def get_analysis(request: Request, analysis_id: UUID) -> AnalysisEnvelope:
     session = request.app.state.session_factory()
     try:
-        model = await AnalysisRepository(session).get(analysis_id)
-        if model is None:
-            raise AppError("ANALYSIS_NOT_FOUND", "Analysis was not found.", status_code=404)
-        return AnalysisService.envelope(model)
+        service = AnalysisService(
+            ReplayRepository(session),
+            AnalysisRepository(session),
+            request.app.state.algorithm_registry,
+        )
+        return await service.get(analysis_id)
     finally:
         await session.close()

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,9 +23,43 @@ class RawReplayRecord:
     content_type: str | None
 
 
+@dataclass(frozen=True)
+class CanonicalGameRecord:
+    game: CanonicalGame
+    source: str
+    external_id: str
+
+
 class ReplayRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    async def _adopt_majsoul_identity(
+        self,
+        model: RawReplayModel,
+        source: str,
+        external_id: str,
+    ) -> UUID:
+        if source != "majsoul" or model.source == "majsoul":
+            return model.id
+        model.source = source
+        model.external_id = external_id
+        model.filename = None
+        model.content_type = None
+        try:
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+            winner = await self.session.scalar(
+                select(RawReplayModel).where(
+                    RawReplayModel.source == source,
+                    RawReplayModel.external_id == external_id,
+                )
+            )
+            if winner is None:
+                raise
+            return winner.id
+        return model.id
 
     async def put_bytes(
         self,
@@ -35,10 +70,18 @@ class ReplayRepository:
         filename: str | None = None,
         content_type: str | None = None,
     ) -> UUID:
+        existing = await self.session.scalar(
+            select(RawReplayModel).where(
+                RawReplayModel.source == source,
+                RawReplayModel.external_id == external_id,
+            )
+        )
+        if existing:
+            return existing.id
         digest = hashlib.sha256(payload).hexdigest()
         existing = await self.session.scalar(select(RawReplayModel).where(RawReplayModel.sha256 == digest))
         if existing:
-            return existing.id
+            return await self._adopt_majsoul_identity(existing, source, external_id)
         model = RawReplayModel(
             source=source,
             external_id=external_id,
@@ -48,7 +91,21 @@ class ReplayRepository:
             content_type=content_type,
         )
         self.session.add(model)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.session.scalar(
+                select(RawReplayModel).where(
+                    RawReplayModel.source == source,
+                    RawReplayModel.external_id == external_id,
+                )
+            )
+            if existing is None:
+                existing = await self.session.scalar(select(RawReplayModel).where(RawReplayModel.sha256 == digest))
+            if existing is None:
+                raise
+            return await self._adopt_majsoul_identity(existing, source, external_id)
         return model.id
 
     async def get(self, replay_id: UUID) -> RawReplayRecord | None:
@@ -67,6 +124,15 @@ class ReplayRepository:
 
     async def get_by_sha256(self, sha256: str) -> RawReplayRecord | None:
         model = await self.session.scalar(select(RawReplayModel).where(RawReplayModel.sha256 == sha256))
+        return await self.get(model.id) if model else None
+
+    async def get_by_source_external_id(self, source: str, external_id: str) -> RawReplayRecord | None:
+        model = await self.session.scalar(
+            select(RawReplayModel).where(
+                RawReplayModel.source == source,
+                RawReplayModel.external_id == external_id,
+            )
+        )
         return await self.get(model.id) if model else None
 
     async def put_canonical_game(self, replay_id: UUID, game: CanonicalGame) -> UUID:
@@ -103,12 +169,49 @@ class ReplayRepository:
                 )
             model.rounds.append(round_model)
         self.session.add(model)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+            winner = await self.session.scalar(
+                select(CanonicalGameModel.id).where(
+                    CanonicalGameModel.raw_replay_id == replay_id,
+                    CanonicalGameModel.schema_version == game.schema_version,
+                )
+            )
+            if winner is None:
+                raise
+            return winner
         return model.id
 
     async def get_game(self, game_id: UUID) -> CanonicalGame | None:
-        model = await self.session.get(CanonicalGameModel, game_id)
-        return CanonicalGame.model_validate(model.game_json) if model else None
+        record = await self.get_game_record(game_id)
+        return record.game if record else None
+
+    async def get_game_record(self, game_id: UUID) -> CanonicalGameRecord | None:
+        row = (
+            await self.session.execute(
+                select(CanonicalGameModel, RawReplayModel.source, RawReplayModel.external_id)
+                .join(RawReplayModel, RawReplayModel.id == CanonicalGameModel.raw_replay_id)
+                .where(CanonicalGameModel.id == game_id)
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        model, source, external_id = row
+        return CanonicalGameRecord(
+            game=CanonicalGame.model_validate(model.game_json),
+            source=source,
+            external_id=external_id,
+        )
+
+    async def get_game_id_for_replay(self, replay_id: UUID, schema_version: str) -> UUID | None:
+        return await self.session.scalar(
+            select(CanonicalGameModel.id).where(
+                CanonicalGameModel.raw_replay_id == replay_id,
+                CanonicalGameModel.schema_version == schema_version,
+            )
+        )
 
     async def get_game_model(self, game_id: UUID) -> CanonicalGameModel | None:
         return await self.session.scalar(

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { createAnalysis, listAlgorithms, type AlgorithmDescription, type GameLuckAnalysis } from "../api/client";
+import { createAnalysis, listAlgorithms, type AlgorithmDescription, type AnalysisEnvelope, type GameLuckAnalysis } from "../api/client";
 import { ComponentBreakdown } from "../components/component-breakdown";
 import { EventTimeline } from "../components/event-timeline";
 import { PlayerLuckComparison } from "../components/player-luck-comparison";
@@ -11,10 +11,18 @@ export function GameAnalysisPage({
   analysis,
   gameId,
   onAnalysis,
+  onAnalysisCreated,
+  embedded = false,
+  showHeader = true,
+  finalScores,
 }: {
   analysis: GameLuckAnalysis;
   gameId?: string;
   onAnalysis?: (analysis: GameLuckAnalysis) => void;
+  onAnalysisCreated?: (analysis: AnalysisEnvelope) => void;
+  embedded?: boolean;
+  showHeader?: boolean;
+  finalScores?: number[];
 }) {
   const { t } = useTranslation("analysis");
   const events = analysis.rounds.flatMap((round) => round.events);
@@ -37,17 +45,19 @@ export function GameAnalysisPage({
     try {
       const envelope = await createAnalysis(gameId, selectedAlgorithm);
       if (envelope.result) onAnalysis?.(envelope.result);
+      onAnalysisCreated?.(envelope);
     } finally {
       setReanalyzing(false);
     }
   }
 
-  return (
-    <main className="analysis-page">
-      <header className="analysis-header">
+  const content = (
+    <>
+      {showHeader && <header className="analysis-header">
         <div><p>{analysis.algorithmId} · v{analysis.algorithmVersion}</p><h1>{t("analysis.title")}</h1><span>{t("analysis.subtitle")}</span></div>
         <div className="result-warning"><strong>{t("analysis.resultIsNotLuck")}</strong><p>{t("analysis.resultHint")}</p></div>
-      </header>
+      </header>}
+      {!showHeader && <div className="result-warning result-warning--inline"><strong>{t("analysis.resultIsNotLuck")}</strong><p>{t("analysis.resultHint")}</p></div>}
       {gameId && (
         <div className="analysis-controls">
           <label>
@@ -71,10 +81,11 @@ export function GameAnalysisPage({
           {oldVersion && <p className="analysis-version-warning">{t("analysis.olderVersion")}</p>}
         </div>
       )}
-      <PlayerLuckComparison players={analysis.players} />
+      <PlayerLuckComparison players={analysis.players} finalScores={finalScores} />
       <RoundLuckChart rounds={analysis.rounds} />
       <ComponentBreakdown players={analysis.players} />
-      <EventTimeline events={events} />
-    </main>
+      <EventTimeline events={events} players={analysis.players} />
+    </>
   );
+  return embedded ? content : <main className="analysis-page">{content}</main>;
 }

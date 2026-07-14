@@ -43,6 +43,7 @@ class RemoteGame(ApiModel):
     ended_at: int | None = None
     players: list[dict[str, object]] = []
     scores: list[int] = []
+    ranks: list[int] = []
     grading_scores: list[int] = []
 
 

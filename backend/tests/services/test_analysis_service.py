@@ -1,3 +1,5 @@
+import asyncio
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -101,10 +103,11 @@ async def analysis_context(tmp_path: Path):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         replay_repository = ReplayRepository(session)
-        replay_id = await replay_repository.put_bytes("fixture", "g", b"raw")
+        record_id = "260307-76323960-cf3c-494e-be24-26dd6ba81c98"
+        replay_id = await replay_repository.put_bytes("majsoul", record_id, b"raw")
         game = CanonicalGame(
-            source="fixture",
-            external_id="g",
+            source="majsoul",
+            external_id=record_id,
             rules=RuleSet.standard_three_player(),
             players=[Player(seat=seat, name=f"P{seat}") for seat in range(3)],
             rounds=[],
@@ -126,6 +129,71 @@ async def test_analysis_is_reused_for_same_game_algorithm_version_and_options(an
     second = await service.analyze(game_id, algorithm.id, {"eventDetails": True})
     assert first.id == second.id
     assert algorithm.calls == 1
+
+
+async def test_analysis_can_be_enqueued_before_processing(analysis_context):
+    service, algorithm, game_id = analysis_context
+
+    pending = await service.enqueue(game_id, algorithm.id, {"eventDetails": True})
+
+    assert pending.status == "pending"
+    assert pending.result is None
+    assert algorithm.calls == 0
+    assert pending.game.id == game_id
+    assert pending.game.mode == "3p"
+    assert pending.game.final_scores == [35000, 35000, 35000]
+    assert pending.game.final_ranks == [1, 2, 3]
+    assert [player.name for player in pending.game.players] == ["P0", "P1", "P2"]
+    assert pending.game.replay_url == (
+        "https://game.maj-soul.com/1/?paipu=260307-76323960-cf3c-494e-be24-26dd6ba81c98"
+    )
+
+    completed = await service.process(pending.id, {"eventDetails": True})
+
+    assert completed.status == "completed"
+    assert completed.result is not None
+    assert algorithm.calls == 1
+
+
+async def test_envelope_normalizes_cached_player_points_to_original_final_scores(analysis_context):
+    service, algorithm, game_id = analysis_context
+
+    completed = await service.analyze(game_id, algorithm.id, {"eventDetails": True})
+
+    assert completed.result is not None
+    assert [player.actual_points for player in completed.result.players] == [35000, 35000, 35000]
+
+
+async def test_processing_exposes_analyzing_status_while_algorithm_runs(analysis_context):
+    service, algorithm, game_id = analysis_context
+    original_analyze = algorithm.analyze
+
+    def slow_analyze(game, options):
+        time.sleep(0.1)
+        return original_analyze(game, options)
+
+    algorithm.analyze = slow_analyze
+    pending = await service.enqueue(game_id, algorithm.id, {"eventDetails": True})
+
+    processing = asyncio.create_task(service.process(pending.id, {"eventDetails": True}))
+    await asyncio.sleep(0.02)
+    in_progress = await service.analysis_repository.get(pending.id)
+
+    assert in_progress is not None
+    assert in_progress.status == "analyzing"
+    await processing
+
+
+async def test_analyses_are_listed_newest_first_with_game_summary(analysis_context):
+    service, algorithm, game_id = analysis_context
+    first = await service.enqueue(game_id, algorithm.id, {"eventDetails": True})
+    second = await service.enqueue(game_id, algorithm.id, {"eventDetails": False})
+
+    analyses = await service.list()
+
+    assert [analysis.id for analysis in analyses] == [second.id, first.id]
+    assert analyses[0].created_at is not None
+    assert analyses[0].game.external_id == "260307-76323960-cf3c-494e-be24-26dd6ba81c98"
 
 
 async def test_options_are_part_of_cache_key(analysis_context):

@@ -101,10 +101,11 @@ def test_opponent_discard_is_informational_and_excluded_from_luck_total():
     assert all(event.included_in_total is False for event in gifts)
 
 
-def test_analysis_reports_every_player_and_keeps_actual_points_separate():
+def test_analysis_reports_every_player_with_original_final_scores():
     analysis = BaselineV1().analyze(fixture_game(), AnalysisOptions(event_details=True))
     assert len(analysis.players) == 4
-    assert analysis.players[0].actual_points == 8000
+    assert analysis.players[0].actual_points == 33000
+    assert analysis.players[1].actual_points == 17000
     assert analysis.rounds[0].players[0].actual_points == 8000
     assert 0 <= analysis.players[0].score <= 100
     assert analysis.algorithm_id == "baseline-v1"

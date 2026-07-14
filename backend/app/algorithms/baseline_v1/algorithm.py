@@ -286,7 +286,7 @@ class BaselineV1(LuckAlgorithm):
                     z_score=z_score,
                     score=score_from_z(z_score),
                     confidence=_confidence(total_events[player.seat], variance),
-                    actual_points=game.final_scores[player.seat] - game.rules.initial_score,
+                    actual_points=game.final_scores[player.seat],
                     components=dict(component_delta[player.seat]),
                 )
             )

@@ -19,6 +19,7 @@ export interface RemoteGame {
   endedAt?: number | null;
   players: Array<Record<string, unknown>>;
   scores: number[];
+  ranks: number[];
   gradingScores: number[];
 }
 
@@ -77,9 +78,28 @@ export interface GameLuckAnalysis {
 
 export interface AnalysisEnvelope {
   id: string;
+  gameId: string;
   status: string;
+  createdAt: string;
+  game: AnalysisGameSummary;
   result?: GameLuckAnalysis | null;
   errorCode?: string | null;
+}
+
+export interface AnalysisGamePlayer {
+  seat: number;
+  name: string;
+}
+
+export interface AnalysisGameSummary {
+  id: string;
+  mode: GameMode;
+  source: string;
+  externalId: string;
+  replayUrl?: string | null;
+  players: AnalysisGamePlayer[];
+  finalScores: number[];
+  finalRanks: number[];
 }
 
 export interface AlgorithmDescription {
@@ -169,4 +189,8 @@ export async function createAnalysis(gameId: string, algorithmId = "baseline-v1"
 
 export async function getAnalysis(id: string, signal?: AbortSignal): Promise<AnalysisEnvelope> {
   return jsonRequest(`/api/analyses/${id}`, { signal });
+}
+
+export async function listAnalyses(signal?: AbortSignal): Promise<AnalysisEnvelope[]> {
+  return jsonRequest("/api/analyses", { signal });
 }

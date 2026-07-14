@@ -4,11 +4,7 @@ import type { PlayerLuckAnalysis } from "../api/client";
 
 export const PLAYER_COLORS = ["#186b5b", "#d06343", "#526d87", "#9a7a35"];
 
-function signed(value: number): string {
-  return `${value >= 0 ? "+" : ""}${value.toLocaleString()}`;
-}
-
-export function PlayerLuckComparison({ players }: { players: PlayerLuckAnalysis[] }) {
+export function PlayerLuckComparison({ players, finalScores }: { players: PlayerLuckAnalysis[]; finalScores?: number[] }) {
   const { t } = useTranslation("analysis");
   return (
     <div className="player-comparison">
@@ -18,7 +14,7 @@ export function PlayerLuckComparison({ players }: { players: PlayerLuckAnalysis[
           <div className="luck-number" data-testid="player-luck-score">{Math.round(player.score)}</div>
           <dl>
             <div><dt>{t("analysis.luckScore")}</dt><dd>z {player.zScore.toFixed(2)}</dd></div>
-            <div><dt>{t("analysis.actualPoints")}</dt><dd>{signed(player.actualPoints)}</dd></div>
+            <div><dt>{t("analysis.finalScore")}</dt><dd>{(finalScores?.[player.seat] ?? player.actualPoints).toLocaleString()}</dd></div>
             <div><dt>{t("analysis.confidence")}</dt><dd>{t(`confidence.${player.confidence}`)}</dd></div>
           </dl>
         </article>

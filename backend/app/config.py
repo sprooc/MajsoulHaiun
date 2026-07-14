@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8765
     data_dir: Path = REPOSITORY_ROOT / "data"
+    majsoul_config_path: Path = Field(
+        default=REPOSITORY_ROOT / "config" / "majsoul.toml",
+        validation_alias="HAIUN_MAJSOUL_CONFIG",
+    )
     version: str = "0.1.0"
     allowed_origins: Annotated[tuple[str, ...], NoDecode] = ()
 
