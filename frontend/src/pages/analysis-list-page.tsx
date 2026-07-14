@@ -45,7 +45,10 @@ export function AnalysisListPage() {
   }, []);
 
   useEffect(() => {
-    const refresh = () => setProvisional(listProvisionalAnalyses());
+    const refresh = () => {
+      setProvisional(listProvisionalAnalyses());
+      void listAnalyses().then(setAnalyses);
+    };
     window.addEventListener(PROVISIONAL_ANALYSES_EVENT, refresh);
     return () => window.removeEventListener(PROVISIONAL_ANALYSES_EVENT, refresh);
   }, []);

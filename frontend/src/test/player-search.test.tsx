@@ -8,6 +8,7 @@ import { setLanguage } from "../i18n";
 beforeEach(async () => {
   await setLanguage("zh-CN");
   vi.restoreAllMocks();
+  sessionStorage.clear();
 });
 
 

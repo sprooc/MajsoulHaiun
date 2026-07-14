@@ -17,20 +17,23 @@ import {
   createProvisionalAnalysis,
   failProvisionalAnalysis,
   provisionalGameFromRemote,
-  removeProvisionalAnalysis,
+  resolveProvisionalAnalysis,
   type ProvisionalGameSummary,
 } from "../analysis/provisional-tasks";
+import { loadSelectedPlayer, saveSelectedPlayer } from "../search/search-session";
 
 
 export function HomePage() {
   const { t } = useTranslation("search");
   const navigate = useNavigate();
-  const [selected, setSelected] = useState<RemotePlayer | null>(null);
+  const [selected, setSelected] = useState<RemotePlayer | null>(loadSelectedPlayer);
   const [games, setGames] = useState<RemoteGame[]>([]);
   const [gamesState, setGamesState] = useState<"idle" | "loading" | "error">("idle");
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [recentImportMessage, setRecentImportMessage] = useState<string | null>(null);
+
+  useEffect(() => saveSelectedPlayer(selected), [selected]);
 
   useEffect(() => {
     if (!selected) return;
@@ -75,8 +78,7 @@ export function HomePage() {
     }
     try {
       const envelope = await createAnalysis(result.gameId);
-      removeProvisionalAnalysis(provisionalId);
-      navigate(`/analyses/${envelope.id}`, { replace: true, state: { analysis: envelope } });
+      resolveProvisionalAnalysis(provisionalId, envelope.id);
     } catch {
       failProvisionalAnalysis(provisionalId);
     }

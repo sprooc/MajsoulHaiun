@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { getAnalysis, type AnalysisEnvelope } from "../api/client";
+import { getAnalysis, type AnalysisEnvelope, type GameLuckAnalysis } from "../api/client";
 import { GameSummary } from "../components/game-summary";
 import { GameAnalysisPage } from "./game-analysis-page";
 import {
   getProvisionalAnalysis,
   PROVISIONAL_ANALYSES_EVENT,
+  removeProvisionalAnalysis,
   type ProvisionalAnalysisTask,
 } from "../analysis/provisional-tasks";
 
@@ -14,6 +15,16 @@ import {
 interface AnalysisLocationState {
   analysis?: AnalysisEnvelope;
   provisional?: ProvisionalAnalysisTask;
+}
+
+function withFinalScores(analysis: GameLuckAnalysis, finalScores: number[]): GameLuckAnalysis {
+  return {
+    ...analysis,
+    players: analysis.players.map((player) => ({
+      ...player,
+      actualPoints: finalScores[player.seat] ?? player.actualPoints,
+    })),
+  };
 }
 
 export function AnalysisDetailPage() {
@@ -64,10 +75,19 @@ export function AnalysisDetailPage() {
 
   useEffect(() => {
     if (!analysisId || !isProvisional) return;
-    const refresh = () => setProvisional(getProvisionalAnalysis(analysisId));
+    const refresh = () => {
+      const next = getProvisionalAnalysis(analysisId);
+      if (next?.status === "resolved" && next.analysisId) {
+        removeProvisionalAnalysis(next.id);
+        navigate(`/analyses/${next.analysisId}`, { replace: true });
+        return;
+      }
+      setProvisional(next);
+    };
+    refresh();
     window.addEventListener(PROVISIONAL_ANALYSES_EVENT, refresh);
     return () => window.removeEventListener(PROVISIONAL_ANALYSES_EVENT, refresh);
-  }, [analysisId, isProvisional]);
+  }, [analysisId, isProvisional, navigate]);
 
   useEffect(() => {
     if (!completedNotice) return;
@@ -75,7 +95,7 @@ export function AnalysisDetailPage() {
     return () => window.clearTimeout(timer);
   }, [completedNotice]);
 
-  if (isProvisional && provisional) {
+  if (isProvisional && provisional && provisional.status !== "resolved") {
     return (
       <main className="analysis-page">
         <header className="analysis-task-header">
@@ -116,7 +136,7 @@ export function AnalysisDetailPage() {
       {envelope.status === "failed" && <p className="inline-error">{t("analysis.failedMessage")}</p>}
       {envelope.status === "completed" && envelope.result && (
         <GameAnalysisPage
-          analysis={envelope.result}
+          analysis={withFinalScores(envelope.result, envelope.game.finalScores)}
           finalScores={envelope.game.finalScores}
           gameId={envelope.gameId}
           embedded

@@ -1,15 +1,22 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { HomePage } from "../pages/home-page";
 import { setLanguage } from "../i18n";
+
+
+function AnalysisProbe() {
+  const { analysisId } = useParams();
+  return <><h1>{analysisId}</h1><Link to="/settings">离开分析</Link></>;
+}
 
 
 beforeEach(async () => {
   await setLanguage("zh-CN");
   vi.restoreAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 
@@ -72,6 +79,35 @@ it("opens a provisional analysis page before the remote replay finishes loading"
 
   expect(await screen.findByRole("heading", { name: "分析中页面" })).toBeInTheDocument();
   expect(resolveImport).toBeTypeOf("function");
+});
+
+
+it("does not redirect back to analysis after the user leaves the provisional page", async () => {
+  let resolveImport: ((response: Response) => void) | undefined;
+  const fetchMock = vi.fn()
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveImport = resolve; }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ id: "analysis-1" }), { status: 202 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <MemoryRouter>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/analyses/:analysisId" element={<AnalysisProbe />} />
+        <Route path="/settings" element={<h1>设置页面</h1>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await userEvent.type(screen.getByPlaceholderText("粘贴雀魂牌谱链接"), "game-uuid");
+  await userEvent.click(screen.getByRole("button", { name: "导入链接并开始分析" }));
+  expect(await screen.findByRole("heading", { name: /^provisional-/ })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("link", { name: "离开分析" }));
+  expect(screen.getByRole("heading", { name: "设置页面" })).toBeInTheDocument();
+
+  resolveImport?.(new Response(JSON.stringify({ replayId: "replay-1", gameId: "game-1" }), { status: 200 }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole("heading", { name: "设置页面" })).toBeInTheDocument();
 });
 
 

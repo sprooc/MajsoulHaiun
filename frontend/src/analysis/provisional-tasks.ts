@@ -15,27 +15,32 @@ export interface ProvisionalGameSummary {
 
 export interface ProvisionalAnalysisTask {
   id: string;
-  status: "loading_replay" | "failed";
+  status: "loading_replay" | "failed" | "resolved";
   createdAt: string;
   game: ProvisionalGameSummary;
+  analysisId?: string;
 }
 
 function notify(): void {
   window.dispatchEvent(new Event(PROVISIONAL_ANALYSES_EVENT));
 }
 
-export function listProvisionalAnalyses(): ProvisionalAnalysisTask[] {
+function readAll(): ProvisionalAnalysisTask[] {
   try {
     const value = JSON.parse(localStorage.getItem(PROVISIONAL_ANALYSES_KEY) ?? "[]") as unknown;
     if (!Array.isArray(value)) return [];
     return value.filter((item): item is ProvisionalAnalysisTask => (
       typeof item === "object" && item !== null
       && typeof (item as ProvisionalAnalysisTask).id === "string"
-      && ((item as ProvisionalAnalysisTask).status === "loading_replay" || (item as ProvisionalAnalysisTask).status === "failed")
+      && ["loading_replay", "failed", "resolved"].includes((item as ProvisionalAnalysisTask).status)
     ));
   } catch {
     return [];
   }
+}
+
+export function listProvisionalAnalyses(): ProvisionalAnalysisTask[] {
+  return readAll().filter((task) => task.status !== "resolved");
 }
 
 function write(tasks: ProvisionalAnalysisTask[]): void {
@@ -51,7 +56,7 @@ export function createProvisionalAnalysis(game: ProvisionalGameSummary = {}): Pr
     createdAt: new Date().toISOString(),
     game,
   };
-  write([task, ...listProvisionalAnalyses()]);
+  write([task, ...readAll().filter((item) => item.status !== "resolved")]);
   return task;
 }
 
@@ -67,15 +72,20 @@ export function provisionalGameFromRemote(game: RemoteGame): ProvisionalGameSumm
 }
 
 export function getProvisionalAnalysis(id: string): ProvisionalAnalysisTask | null {
-  return listProvisionalAnalyses().find((task) => task.id === id) ?? null;
+  return readAll().find((task) => task.id === id) ?? null;
 }
 
 export function failProvisionalAnalysis(id?: string): void {
   if (!id) return;
-  write(listProvisionalAnalyses().map((task) => task.id === id ? { ...task, status: "failed" } : task));
+  write(readAll().map((task) => task.id === id ? { ...task, status: "failed" } : task));
+}
+
+export function resolveProvisionalAnalysis(id: string | undefined, analysisId: string): void {
+  if (!id) return;
+  write(readAll().map((task) => task.id === id ? { ...task, status: "resolved", analysisId } : task));
 }
 
 export function removeProvisionalAnalysis(id?: string): void {
   if (!id) return;
-  write(listProvisionalAnalyses().filter((task) => task.id !== id));
+  write(readAll().filter((task) => task.id !== id));
 }

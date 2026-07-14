@@ -1,14 +1,25 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError, type GameMode, type RemotePlayer, searchPlayers } from "../api/client";
+import { loadPlayerSearchSession, savePlayerSearchSession } from "../search/search-session";
 
 
 export function PlayerSearch({ onSelect }: { onSelect?: (player: RemotePlayer) => void }) {
   const { t } = useTranslation("search");
-  const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<GameMode>("4p");
-  const [players, setPlayers] = useState<RemotePlayer[]>([]);
-  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [initial] = useState(loadPlayerSearchSession);
+  const [query, setQuery] = useState(initial.query);
+  const [mode, setMode] = useState<GameMode>(initial.mode);
+  const [players, setPlayers] = useState<RemotePlayer[]>(initial.players);
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">(initial.state);
+
+  useEffect(() => {
+    savePlayerSearchSession({
+      query,
+      mode,
+      players,
+      state: state === "done" ? "done" : "idle",
+    });
+  }, [mode, players, query, state]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
