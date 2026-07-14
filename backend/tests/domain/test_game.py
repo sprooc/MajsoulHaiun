@@ -10,6 +10,10 @@ def make_players(count: int) -> list[Player]:
     return [Player(seat=seat, name=f"P{seat}") for seat in range(count)]
 
 
+def test_canonical_schema_version_invalidates_legacy_score_semantics():
+    assert CanonicalGame.model_fields["schema_version"].default == "1.0.1"
+
+
 def test_kita_is_valid_only_when_rules_enable_it():
     event = CallEvent(sequence=3, actor=1, kind=CallKind.KITA, tile="4z", consumed_tiles=[])
     game = CanonicalGame(

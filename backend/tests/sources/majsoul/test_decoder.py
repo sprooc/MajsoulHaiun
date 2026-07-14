@@ -105,6 +105,34 @@ def test_res_game_record_outer_container_preserves_accounts_and_uuid():
     ]
 
 
+def test_game_end_result_uses_raw_points_instead_of_settlement_points():
+    accounts = b"".join(
+        field_bytes(11, field_varint(2, seat) + field_bytes(3, f"Player {seat + 1}".encode()))
+        for seat in range(4)
+    )
+    settlement_points = [26000, -7100, 9000, -27900]
+    raw_final_points = [36000, 22900, 29000, 12100]
+    result_players = b"".join(
+        field_bytes(
+            1,
+            field_varint(1, seat)
+            + field_varint(2, value if value >= 0 else (1 << 64) + value)
+            + field_varint(3, raw_final_points[seat]),
+        )
+        for seat, value in enumerate(settlement_points)
+    )
+    head = field_bytes(1, b"record-uuid") + accounts + field_bytes(12, result_players)
+    new_round = field_bytes(5, b"".join(varint(25000) for _ in range(4)))
+    details = field_bytes(1, wrapper(".lq.RecordNewRound", new_round))
+    response = field_bytes(3, head) + field_bytes(4, details)
+
+    game = canonicalize_majsoul(
+        decode_majsoul(wrapper(".lq.ResGameRecord", response), load_vendored_descriptor())
+    )
+
+    assert game.final_scores == raw_final_points
+
+
 def test_proto3_omitted_zero_seat_is_not_replaced_by_account_list_index():
     accounts = b"".join(
         [

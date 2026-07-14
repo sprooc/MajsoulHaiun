@@ -294,8 +294,8 @@ def _binary_to_game(payload: bytes, descriptor: dict[str, object]) -> DecodedMaj
             (item for item in result_players if isinstance(item, dict)),
             key=lambda item: int(item.get("seat", 0)),
         )
-        if len(ordered_results) == player_count:
-            current_scores = [int(item.get("total_point", 0)) for item in ordered_results]
+        if len(ordered_results) == player_count and any("part_point_1" in item for item in ordered_results):
+            current_scores = [int(item.get("part_point_1", 0)) for item in ordered_results]
     if not current_scores:
         current_scores = [35000 if player_count == 3 else 25000] * player_count
     ranks = [rank + 1 for rank, _ in sorted(enumerate(current_scores), key=lambda item: (-item[1], item[0]))]
