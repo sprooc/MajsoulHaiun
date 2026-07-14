@@ -1,0 +1,66 @@
+from pathlib import Path
+
+import pytest
+
+from app.config import Settings
+from app.sources.majsoul.fetch_config import MajsoulConfigError, load_majsoul_fetch_config
+
+
+def test_loads_ordered_accounts_and_defaults_host(tmp_path: Path):
+    path = tmp_path / "majsoul.toml"
+    path.write_text(
+        "timeout_seconds = 12\n"
+        "[[accounts]]\n"
+        'username = "first"\n'
+        'password = "secret-one"\n'
+        "[[accounts]]\n"
+        'username = "second"\n'
+        'password = "secret-two"\n'
+        'host = "https://game.maj-soul.com"\n',
+        encoding="utf-8",
+    )
+
+    config = load_majsoul_fetch_config(path)
+
+    assert config.timeout_seconds == 12
+    assert [account.username for account in config.accounts] == ["first", "second"]
+    assert all(account.host == "https://game.maj-soul.com" for account in config.accounts)
+    assert config.accounts[0].password.get_secret_value() == "secret-one"
+    assert "secret-one" not in repr(config)
+    assert "secret-two" not in repr(config)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "timeout_seconds = 0\n",
+        "[[accounts]]\nusername = 'x'\n",
+        "[[accounts]]\nusername = 'x'\npassword = 'y'\nhost = 'https://example.com'\n",
+    ],
+)
+def test_rejects_missing_or_invalid_accounts(tmp_path: Path, text: str):
+    path = tmp_path / "majsoul.toml"
+    path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(MajsoulConfigError) as error:
+        load_majsoul_fetch_config(path)
+
+    assert "password" not in str(error.value).lower()
+    assert "username" not in str(error.value).lower()
+
+
+def test_missing_config_error_contains_path_but_no_secret(tmp_path: Path):
+    path = tmp_path / "missing.toml"
+
+    with pytest.raises(MajsoulConfigError) as error:
+        load_majsoul_fetch_config(path)
+
+    assert str(path) in str(error.value)
+
+
+def test_settings_accepts_majsoul_config_environment_path(tmp_path: Path, monkeypatch):
+    path = tmp_path / "accounts.toml"
+    monkeypatch.setenv("HAIUN_MAJSOUL_CONFIG", str(path))
+
+    assert Settings().majsoul_config_path == path
