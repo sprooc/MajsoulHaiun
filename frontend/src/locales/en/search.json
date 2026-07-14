@@ -15,7 +15,7 @@
     "loading": "Searching…",
     "empty": "No matching players found",
     "recent": "View recent games",
-    "coverage": "The public index may lag; full replay access depends on anonymous upstream availability."
+    "coverage": "The public index may lag; full replays are fetched using configured server-side accounts in order."
   },
   "gameTable": {
     "title": "Recent games",
@@ -42,7 +42,7 @@
     "parseFailed": "The replay was saved, but its contents could not be parsed. Check the file format.",
     "analyzing": "Calculating luck…",
     "analysisFailed": "The replay was saved, but analysis could not complete.",
-    "fetchUnavailable": "Anonymous raw replay access is unavailable. Public metadata still works; import a local replay file instead.",
+    "fetchUnavailable": "None of the configured Mahjong Soul accounts can access this replay. Check its permissions or import a local replay file.",
     "error": "Import failed. Check the file or link and try again."
   }
 }

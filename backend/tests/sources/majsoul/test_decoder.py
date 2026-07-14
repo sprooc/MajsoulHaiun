@@ -103,3 +103,24 @@ def test_res_game_record_outer_container_preserves_accounts_and_uuid():
     assert [account["nickname"] for account in decoded["accounts"]] == [
         "Player 1", "Player 2", "Player 3", "Player 4"
     ]
+
+
+def test_proto3_omitted_zero_seat_is_not_replaced_by_account_list_index():
+    accounts = b"".join(
+        [
+            field_bytes(11, field_varint(2, 2) + field_bytes(3, b"West")),
+            field_bytes(11, field_varint(2, 1) + field_bytes(3, b"South")),
+            field_bytes(11, field_varint(2, 3) + field_bytes(3, b"North")),
+            field_bytes(11, field_bytes(3, b"East")),
+        ]
+    )
+    head = field_bytes(1, b"record-uuid") + accounts
+    new_round = field_bytes(5, b"".join(varint(25000) for _ in range(4)))
+    details = field_bytes(1, wrapper(".lq.RecordNewRound", new_round))
+    response = field_bytes(3, head) + field_bytes(4, details)
+
+    decoded = decode_majsoul(wrapper(".lq.ResGameRecord", response), load_vendored_descriptor())
+    game = canonicalize_majsoul(decoded)
+
+    assert [account["seat"] for account in decoded["accounts"]] == [2, 1, 3, 0]
+    assert [player.seat for player in game.players] == [0, 1, 2, 3]

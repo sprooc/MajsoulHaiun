@@ -12,6 +12,49 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _delete_canonical_game(connection, game_id: object) -> None:
+    parameters = {"game_id": game_id}
+    connection.execute(
+        sa.text(
+            """
+            DELETE FROM event_analyses
+            WHERE round_analysis_id IN (
+                SELECT round_analysis.id
+                FROM round_analyses AS round_analysis
+                JOIN analyses AS analysis ON analysis.id = round_analysis.analysis_id
+                WHERE analysis.game_id = :game_id
+            )
+            """
+        ),
+        parameters,
+    )
+    connection.execute(
+        sa.text(
+            "DELETE FROM round_analyses WHERE analysis_id IN "
+            "(SELECT id FROM analyses WHERE game_id = :game_id)"
+        ),
+        parameters,
+    )
+    connection.execute(
+        sa.text(
+            "DELETE FROM player_analyses WHERE analysis_id IN "
+            "(SELECT id FROM analyses WHERE game_id = :game_id)"
+        ),
+        parameters,
+    )
+    connection.execute(sa.text("DELETE FROM analyses WHERE game_id = :game_id"), parameters)
+    connection.execute(
+        sa.text(
+            "DELETE FROM canonical_events WHERE round_id IN "
+            "(SELECT id FROM canonical_rounds WHERE game_id = :game_id)"
+        ),
+        parameters,
+    )
+    connection.execute(sa.text("DELETE FROM canonical_rounds WHERE game_id = :game_id"), parameters)
+    connection.execute(sa.text("DELETE FROM canonical_players WHERE game_id = :game_id"), parameters)
+    connection.execute(sa.text("DELETE FROM canonical_games WHERE id = :game_id"), parameters)
+
+
 def _remove_duplicate_identities() -> None:
     connection = op.get_bind()
     duplicates = connection.execute(
@@ -23,7 +66,7 @@ def _remove_duplicate_identities() -> None:
             HAVING COUNT(*) > 1
             """
         )
-    ).mappings()
+    ).mappings().all()
     for duplicate in duplicates:
         replay_ids = connection.execute(
             sa.text(
@@ -43,7 +86,7 @@ def _remove_duplicate_identities() -> None:
                     "SELECT id, schema_version FROM canonical_games WHERE raw_replay_id = :replay_id"
                 ),
                 {"replay_id": replay_id},
-            ).mappings()
+            ).mappings().all()
             for game in games:
                 existing_game = connection.execute(
                     sa.text(
@@ -60,10 +103,7 @@ def _remove_duplicate_identities() -> None:
                         {"survivor": survivor, "game_id": game["id"]},
                     )
                 else:
-                    connection.execute(
-                        sa.text("DELETE FROM canonical_games WHERE id = :game_id"),
-                        {"game_id": game["id"]},
-                    )
+                    _delete_canonical_game(connection, game["id"])
             connection.execute(
                 sa.text("DELETE FROM raw_replays WHERE id = :replay_id"),
                 {"replay_id": replay_id},

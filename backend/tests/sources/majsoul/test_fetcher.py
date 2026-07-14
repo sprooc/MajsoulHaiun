@@ -51,7 +51,7 @@ def write_config(path: Path):
         "[[accounts]]\n"
         'username = "second"\n'
         'password = "secret-two"\n'
-        'host = "https://mahjongsoul.game.yo-star.com"\n',
+        'host = "https://game.maj-soul.com"\n',
         encoding="utf-8",
     )
 
@@ -78,7 +78,7 @@ async def test_tries_accounts_in_toml_order_after_login_rejection(tmp_path: Path
 
     assert payload == b"wrapped-replay"
     assert factory.usernames == ["first", "second"]
-    assert factory.hosts == ["https://game.maj-soul.com", "https://mahjongsoul.game.yo-star.com"]
+    assert factory.hosts == ["https://game.maj-soul.com", "https://game.maj-soul.com"]
     assert factory.timeouts == [9, 9]
 
 
@@ -135,3 +135,19 @@ async def test_missing_config_is_typed_and_sanitized(tmp_path: Path):
         await http_client.aclose()
 
     assert "password" not in str(error.value).lower()
+
+
+async def test_client_factory_failure_is_mapped_to_remote_error(tmp_path: Path):
+    config_path = tmp_path / "majsoul.toml"
+    write_config(config_path)
+    http_client = httpx.AsyncClient()
+
+    def broken_factory(**_kwargs):
+        raise RuntimeError("constructor failed")
+
+    fetcher = MajsoulReplayFetcher(config_path, http_client, broken_factory)
+    try:
+        with pytest.raises(ReplayFetchRemoteError):
+            await fetcher.fetch(MajsoulLocator.parse(RECORD_ID))
+    finally:
+        await http_client.aclose()

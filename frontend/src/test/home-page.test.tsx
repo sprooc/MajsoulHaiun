@@ -66,7 +66,7 @@ it("loads the next page using the returned cursor", async () => {
 });
 
 
-it("imports a selected recent game and explains unavailable anonymous replay access", async () => {
+it("imports a selected recent game and explains unavailable configured-account access", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn()
@@ -102,5 +102,5 @@ it("imports a selected recent game and explains unavailable anonymous replay acc
     "/api/replays/import-locator",
     expect.objectContaining({ method: "POST", body: JSON.stringify({ locator: "game-uuid" }) }),
   );
-  expect(await screen.findByText("匿名原始牌谱暂不可用。公开对局信息仍可查看，请改用本地牌谱文件导入。")).toBeInTheDocument();
+  expect(await screen.findByText("已配置的雀魂账号均无法获取此牌谱。请检查牌谱权限，或改用本地牌谱文件导入。")).toBeInTheDocument();
 });

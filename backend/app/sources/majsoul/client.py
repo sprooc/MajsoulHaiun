@@ -19,6 +19,8 @@ _PRODUCT_VERSION_PATTERNS = (
     re.compile(r'productVersion\s*:\s*["\']([^"\']+)["\']'),
     re.compile(r'WebGL-[^-"\']+-(\d+(?:\.\d+)+)\('),
 )
+_ALLOWED_GATEWAY_SUFFIX = ".maj-soul.com"
+_ALLOWED_GATEWAY_PORTS = {None, 443, 8443}
 
 
 class MajsoulClientError(Exception):
@@ -49,12 +51,50 @@ def extract_client_version(index_html: str) -> str:
     raise MajsoulGatewayError("Mahjong Soul client version could not be discovered.")
 
 
+def _official_gateway_url(value: str) -> str:
+    parsed = urlparse(value)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise MajsoulGatewayError("Mahjong Soul gateway response was invalid.") from exc
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or not parsed.hostname.endswith(_ALLOWED_GATEWAY_SUFFIX)
+        or port not in _ALLOWED_GATEWAY_PORTS
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise MajsoulGatewayError("Mahjong Soul gateway response was invalid.")
+    return value.rstrip("/")
+
+
 def _websocket_endpoint(route: dict[str, Any]) -> str:
     domain = route.get("domain")
-    if not isinstance(domain, str) or not domain:
+    if not isinstance(domain, str) or not domain or route.get("ssl") is not True:
         raise MajsoulGatewayError("Mahjong Soul gateway response was invalid.")
-    scheme = "wss" if route.get("ssl", True) else "ws"
-    return f"{scheme}://{domain.rstrip('/')}/gateway"
+    parsed = urlparse(f"//{domain}")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise MajsoulGatewayError("Mahjong Soul gateway response was invalid.") from exc
+    if (
+        not parsed.hostname
+        or not parsed.hostname.endswith(_ALLOWED_GATEWAY_SUFFIX)
+        or port not in _ALLOWED_GATEWAY_PORTS
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise MajsoulGatewayError("Mahjong Soul gateway response was invalid.")
+    netloc = parsed.hostname if port is None else f"{parsed.hostname}:{port}"
+    return f"wss://{netloc}/gateway"
 
 
 class MajsoulClient:
@@ -110,37 +150,49 @@ class MajsoulClient:
             self.resource_version = str(version_response.json()["version"])
             config_response = await self._get(f"{self.host}/1/v{self.resource_version}/config.json")
             config = config_response.json()
-            endpoint = await self._discover_endpoint(config)
+            endpoints = await self._discover_endpoints(config)
         except MajsoulClientError:
             raise
         except (KeyError, TypeError, ValueError) as exc:
             raise MajsoulGatewayError("Mahjong Soul gateway configuration was invalid.") from exc
 
-        self.channel = self.channel_factory(endpoint)
-        self.lobby = self.lobby_factory(self.channel)
-        try:
-            await self._wait(self.channel.connect(self.host))
-        except MajsoulClientError:
-            raise
-        except Exception as exc:
-            raise MajsoulGatewayError("Mahjong Soul WebSocket connection failed.") from exc
+        last_error: Exception | None = None
+        for endpoint in endpoints:
+            self.channel = self.channel_factory(endpoint)
+            self.lobby = self.lobby_factory(self.channel)
+            try:
+                await self._wait(self.channel.connect(self.host))
+                return
+            except Exception as exc:
+                last_error = exc
+                await self._close_safely()
+                self.channel = None
+                self.lobby = None
+        raise MajsoulGatewayError("Mahjong Soul WebSocket connection failed.") from last_error
 
-    async def _discover_endpoint(self, config: dict[str, Any]) -> str:
+    async def _discover_endpoints(self, config: dict[str, Any]) -> list[str]:
         ip_entries = config.get("ip") or []
         if not isinstance(ip_entries, list) or not ip_entries or not isinstance(ip_entries[0], dict):
             raise MajsoulGatewayError("Mahjong Soul gateway configuration was invalid.")
         ip_info = ip_entries[0]
-        gateways = [
-            item["url"].rstrip("/")
-            for item in ip_info.get("gateways", [])
-            if isinstance(item, dict) and isinstance(item.get("url"), str) and item["url"]
-        ]
-        legacy_regions = [
-            item["url"].rstrip("/")
-            for item in ip_info.get("region_urls", [])
-            if isinstance(item, dict) and isinstance(item.get("url"), str) and item["url"]
-        ]
+        gateways: list[str] = []
+        for item in ip_info.get("gateways", []):
+            if not isinstance(item, dict) or not isinstance(item.get("url"), str):
+                continue
+            try:
+                gateways.append(_official_gateway_url(item["url"]))
+            except MajsoulGatewayError:
+                continue
+        legacy_regions: list[str] = []
+        for item in ip_info.get("region_urls", []):
+            if not isinstance(item, dict) or not isinstance(item.get("url"), str):
+                continue
+            try:
+                legacy_regions.append(_official_gateway_url(item["url"]))
+            except MajsoulGatewayError:
+                continue
 
+        endpoints: list[str] = []
         for gateway_url in gateways:
             try:
                 response = await self._get(
@@ -150,17 +202,13 @@ class MajsoulClient:
                 routes = response.json().get("data", {}).get("routes", [])
                 usable = [route for route in routes if isinstance(route, dict) and route.get("state") != "busy"]
                 candidates = usable or [route for route in routes if isinstance(route, dict)]
-                if candidates:
-                    best_level = min(int(route.get("level", 0)) for route in candidates)
-                    best = next(route for route in candidates if int(route.get("level", 0)) == best_level)
-                    return _websocket_endpoint(best)
+                for route in sorted(candidates, key=lambda item: int(item.get("level", 0))):
+                    try:
+                        endpoints.append(_websocket_endpoint(route))
+                    except MajsoulGatewayError:
+                        continue
             except (MajsoulGatewayError, AttributeError, TypeError, ValueError):
                 continue
-
-        if gateways:
-            parsed = urlparse(gateways[0])
-            if parsed.netloc:
-                return f"wss://{parsed.netloc}/gateway"
 
         for region_url in legacy_regions:
             try:
@@ -170,11 +218,22 @@ class MajsoulClient:
                 )
                 servers = response.json().get("servers", [])
                 if isinstance(servers, list) and servers:
-                    return f"wss://{servers[0]}/gateway"
+                    for server in servers:
+                        try:
+                            endpoints.append(_websocket_endpoint({"domain": server, "ssl": True}))
+                        except MajsoulGatewayError:
+                            continue
             except (MajsoulGatewayError, AttributeError, TypeError):
                 continue
 
-        raise MajsoulGatewayError("Mahjong Soul gateway could not be discovered.")
+        for gateway in gateways:
+            parsed = urlparse(gateway)
+            endpoints.append(f"wss://{parsed.netloc}/gateway")
+
+        unique_endpoints = list(dict.fromkeys(endpoints))
+        if not unique_endpoints:
+            raise MajsoulGatewayError("Mahjong Soul gateway could not be discovered.")
+        return unique_endpoints
 
     async def _login(self, username: str, password: str) -> None:
         if self.lobby is None:
@@ -198,8 +257,15 @@ class MajsoulClient:
             raise
         except Exception as exc:
             raise MajsoulGatewayError("Mahjong Soul login request failed.") from exc
-        if response.error.code or not response.access_token:
+        try:
+            error_code = int(response.error.code)
+            access_token = response.access_token
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise MajsoulProtocolError("Mahjong Soul login response was invalid.") from exc
+        if error_code:
             raise MajsoulLoginRejected("Mahjong Soul account login was rejected.")
+        if not access_token:
+            raise MajsoulProtocolError("Mahjong Soul login response was invalid.")
 
     async def _download(self, record_id: str) -> bytes:
         if self.lobby is None:
@@ -214,17 +280,25 @@ class MajsoulClient:
             raise
         except Exception as exc:
             raise MajsoulGatewayError("Mahjong Soul replay request failed.") from exc
-        if response.error.code == 1203:
+        try:
+            error_code = int(response.error.code)
+            serialized = response.SerializeToString()
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise MajsoulProtocolError("Mahjong Soul replay response was invalid.") from exc
+        if error_code == 1203:
             raise MajsoulRecordUnavailable("Mahjong Soul replay is unavailable to this account.")
-        if response.error.code:
-            raise MajsoulProtocolError(f"Mahjong Soul replay request failed with code {response.error.code}.")
-        wrapper = pb.Wrapper(name=".lq.ResGameRecord", data=response.SerializeToString())
+        if error_code:
+            raise MajsoulProtocolError(f"Mahjong Soul replay request failed with code {error_code}.")
+        wrapper = pb.Wrapper(name=".lq.ResGameRecord", data=serialized)
         return wrapper.SerializeToString()
 
     async def _close_safely(self) -> None:
         if self.channel is None:
             return
         try:
-            await self.channel.close()
+            await asyncio.wait_for(
+                self.channel.close(),
+                timeout=min(self.timeout_seconds, 5.0),
+            )
         except Exception:
             pass

@@ -37,6 +37,8 @@ def test_loads_ordered_accounts_and_defaults_host(tmp_path: Path):
         "timeout_seconds = 0\n",
         "[[accounts]]\nusername = 'x'\n",
         "[[accounts]]\nusername = 'x'\npassword = 'y'\nhost = 'https://example.com'\n",
+        "[[accounts]]\nusername = 'x'\npassword = 'y'\nhost = 'https://game.maj-soul.com:8443'\n",
+        "[[accounts]]\nusername = 'x'\npassword = 'y'\nhost = 'https://game.maj-soul.com?next=x'\n",
     ],
 )
 def test_rejects_missing_or_invalid_accounts(tmp_path: Path, text: str):
@@ -57,6 +59,20 @@ def test_missing_config_error_contains_path_but_no_secret(tmp_path: Path):
         load_majsoul_fetch_config(path)
 
     assert str(path) in str(error.value)
+
+
+def test_invalid_config_discards_raw_validation_cause_and_hides_account_repr(tmp_path: Path):
+    invalid = tmp_path / "invalid.toml"
+    invalid.write_text("[[accounts]]\nusername = 'visible-user'\npassword = 123456789\n", encoding="utf-8")
+
+    with pytest.raises(MajsoulConfigError) as error:
+        load_majsoul_fetch_config(invalid)
+
+    assert error.value.__cause__ is None
+
+    valid = tmp_path / "valid.toml"
+    valid.write_text("[[accounts]]\nusername = 'visible-user'\npassword = 'secret'\n", encoding="utf-8")
+    assert "visible-user" not in repr(load_majsoul_fetch_config(valid))
 
 
 def test_settings_accepts_majsoul_config_environment_path(tmp_path: Path, monkeypatch):

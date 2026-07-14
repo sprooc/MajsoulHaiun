@@ -1,11 +1,7 @@
 import tomllib
 from pathlib import Path
-from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
-
-from app.sources.majsoul.locator import ALLOWED_HOSTS
-
 
 DEFAULT_MAJSOUL_HOST = "https://game.maj-soul.com"
 
@@ -17,8 +13,8 @@ class MajsoulConfigError(Exception):
 class MajsoulAccount(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    username: str
-    password: SecretStr
+    username: str = Field(repr=False)
+    password: SecretStr = Field(repr=False)
     host: str = DEFAULT_MAJSOUL_HOST
 
     @field_validator("username")
@@ -40,8 +36,7 @@ class MajsoulAccount(BaseModel):
     @classmethod
     def validate_host(cls, value: str) -> str:
         normalized = value.rstrip("/")
-        parsed = urlparse(normalized)
-        if parsed.scheme != "https" or parsed.hostname not in ALLOWED_HOSTS or parsed.path:
+        if normalized != DEFAULT_MAJSOUL_HOST:
             raise ValueError("unsupported Mahjong Soul host")
         return normalized
 
@@ -57,12 +52,12 @@ def load_majsoul_fetch_config(path: Path) -> MajsoulFetchConfig:
     try:
         with path.open("rb") as config_file:
             raw = tomllib.load(config_file)
-    except FileNotFoundError as exc:
-        raise MajsoulConfigError(f"Mahjong Soul configuration file was not found: {path}") from exc
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise MajsoulConfigError(f"Invalid Mahjong Soul configuration file: {path}") from exc
+    except FileNotFoundError:
+        raise MajsoulConfigError(f"Mahjong Soul configuration file was not found: {path}") from None
+    except (OSError, tomllib.TOMLDecodeError):
+        raise MajsoulConfigError(f"Invalid Mahjong Soul configuration file: {path}") from None
 
     try:
         return MajsoulFetchConfig.model_validate(raw)
-    except ValidationError as exc:
-        raise MajsoulConfigError(f"Invalid Mahjong Soul configuration file: {path}") from exc
+    except ValidationError:
+        raise MajsoulConfigError(f"Invalid Mahjong Soul configuration file: {path}") from None

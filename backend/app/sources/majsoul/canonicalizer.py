@@ -182,16 +182,19 @@ def canonicalize_majsoul(decoded: dict[str, Any]) -> CanonicalGame:
         raise AppError("UNSUPPORTED_GAME_MODE", "Only standard three- and four-player games are supported.", status_code=422)
     source_rules = decoded.get("rules") if isinstance(decoded.get("rules"), dict) else {}
     rules = rules.model_copy(update={"source_rules": source_rules, "tsumo_loss": source_rules.get("tsumo_loss", rules.tsumo_loss)})
-    players = [
-        Player(
-            seat=int(account.get("seat", index)),
-            name=str(account.get("nickname", account.get("name", f"P{index}"))),
-            external_id=str(account["account_id"]) if "account_id" in account else None,
-            level_id=account.get("level_id"),
-        )
-        for index, account in enumerate(accounts)
-        if isinstance(account, dict)
-    ]
+    players = sorted(
+        [
+            Player(
+                seat=int(account.get("seat", index)),
+                name=str(account.get("nickname", account.get("name", f"P{index}"))),
+                external_id=str(account["account_id"]) if "account_id" in account else None,
+                level_id=account.get("level_id"),
+            )
+            for index, account in enumerate(accounts)
+            if isinstance(account, dict)
+        ],
+        key=lambda player: player.seat,
+    )
     rounds: list[Round] = []
     for index, item in enumerate(rounds_data):
         if not isinstance(item, dict):

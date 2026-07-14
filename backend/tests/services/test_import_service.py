@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock
 from uuid import uuid4
+import hashlib
 
 import pytest
 
@@ -101,11 +102,21 @@ async def test_file_import_hashes_payload_through_repository(import_service, rep
     assert replay_id == repository.put_bytes.return_value
     repository.put_bytes.assert_awaited_once_with(
         source="local-file",
-        external_id="game.json",
+        external_id=hashlib.sha256(b'{"schema_version":"1.0.0"}').hexdigest(),
         payload=b'{"schema_version":"1.0.0"}',
         filename="game.json",
         content_type="application/json",
     )
+
+
+async def test_same_filename_with_different_content_uses_different_identities(import_service, repository):
+    repository.put_bytes.side_effect = [uuid4(), uuid4()]
+
+    await import_service.import_file("game.json", b"first", "application/json")
+    await import_service.import_file("game.json", b"second", "application/json")
+
+    first_call, second_call = repository.put_bytes.await_args_list
+    assert first_call.kwargs["external_id"] != second_call.kwargs["external_id"]
 
 
 async def test_executable_archives_are_rejected(import_service):

@@ -103,3 +103,21 @@ def test_locator_import_uses_app_settings_and_shared_http_client(client, setting
     assert response.status_code == 200
     assert captured["config_path"] == settings.majsoul_config_path
     assert captured["http_client"] is client.app.state.http_client
+
+
+def test_unparseable_remote_replay_is_not_cached_as_success(client, monkeypatch):
+    fetch_calls = 0
+
+    async def fetch_invalid(_self, _locator):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return b"{}"
+
+    monkeypatch.setattr(MajsoulReplayFetcher, "fetch", fetch_invalid)
+
+    first = client.post("/api/replays/import-locator", json={"locator": RECORD_ID})
+    second = client.post("/api/replays/import-locator", json={"locator": RECORD_ID})
+
+    assert first.status_code == second.status_code == 422
+    assert first.json()["code"] == second.json()["code"] == "INVALID_REPLAY_DATA"
+    assert fetch_calls == 2

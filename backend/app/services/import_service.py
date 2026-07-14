@@ -1,3 +1,4 @@
+import hashlib
 from uuid import UUID
 
 from app.errors import AppError
@@ -21,7 +22,7 @@ class ImportService:
         validate_replay_file(filename, payload)
         return await self.repository.put_bytes(
             source="local-file",
-            external_id=filename,
+            external_id=hashlib.sha256(payload).hexdigest(),
             payload=payload,
             filename=filename,
             content_type=content_type,

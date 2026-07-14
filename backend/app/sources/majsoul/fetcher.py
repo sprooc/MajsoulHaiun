@@ -4,7 +4,6 @@ from typing import Any
 
 import httpx
 
-from app.config import REPOSITORY_ROOT
 from app.sources.majsoul.client import (
     MajsoulClient,
     MajsoulClientError,
@@ -30,12 +29,12 @@ class ReplayFetchRemoteError(ReplayFetchUnavailable):
 class MajsoulReplayFetcher:
     def __init__(
         self,
-        config_path: Path | None = None,
-        http_client: httpx.AsyncClient | None = None,
+        config_path: Path,
+        http_client: httpx.AsyncClient,
         client_factory: Callable[..., Any] = MajsoulClient,
     ):
-        self.config_path = config_path or REPOSITORY_ROOT / "config" / "majsoul.toml"
-        self.http_client = http_client or httpx.AsyncClient()
+        self.config_path = config_path
+        self.http_client = http_client
         self.client_factory = client_factory
 
     async def fetch(self, locator: MajsoulLocator) -> bytes:
@@ -45,11 +44,14 @@ class MajsoulReplayFetcher:
             raise ReplayFetchConfigurationError("Mahjong Soul replay fetching is not configured.") from exc
 
         for account in config.accounts:
-            client = self.client_factory(
-                host=account.host,
-                timeout_seconds=config.timeout_seconds,
-                http_client=self.http_client,
-            )
+            try:
+                client = self.client_factory(
+                    host=account.host,
+                    timeout_seconds=config.timeout_seconds,
+                    http_client=self.http_client,
+                )
+            except Exception as exc:
+                raise ReplayFetchRemoteError("Mahjong Soul replay client could not be created.") from exc
             try:
                 return await client.fetch_record(
                     locator.record_id,

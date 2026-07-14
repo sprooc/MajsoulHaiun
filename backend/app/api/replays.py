@@ -74,7 +74,16 @@ async def import_locator(request: Request, body: LocatorImport) -> dict[str, str
         replay = await repository.get(replay_id)
         if replay is None:
             raise AppError("REPLAY_NOT_FOUND", "Imported replay was not found.", status_code=500)
-        return await _store_canonical_game(repository, replay_id, replay.payload)
+        response = await _store_canonical_game(repository, replay_id, replay.payload)
+        if "parseErrorCode" in response:
+            await repository.delete(replay_id)
+            raise AppError(
+                response["parseErrorCode"],
+                "Fetched Mahjong Soul replay could not be parsed.",
+                status_code=422,
+                parameters={"recordId": replay.external_id},
+            )
+        return response
     finally:
         await session.close()
 

@@ -302,7 +302,7 @@ def _binary_to_game(payload: bytes, descriptor: dict[str, object]) -> DecodedMaj
     final_ranks = [ranks.index(seat + 1) + 1 for seat in range(player_count)]
     accounts = [
         {
-            "seat": int(account.get("seat", index)),
+            "seat": int(account.get("seat", 0)),
             "nickname": str(account.get("nickname", f"P{index + 1}")),
             "account_id": account.get("account_id"),
             "level_id": (
