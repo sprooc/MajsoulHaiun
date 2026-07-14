@@ -23,6 +23,13 @@ class RawReplayRecord:
     content_type: str | None
 
 
+@dataclass(frozen=True)
+class CanonicalGameRecord:
+    game: CanonicalGame
+    source: str
+    external_id: str
+
+
 class ReplayRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -178,8 +185,25 @@ class ReplayRepository:
         return model.id
 
     async def get_game(self, game_id: UUID) -> CanonicalGame | None:
-        model = await self.session.get(CanonicalGameModel, game_id)
-        return CanonicalGame.model_validate(model.game_json) if model else None
+        record = await self.get_game_record(game_id)
+        return record.game if record else None
+
+    async def get_game_record(self, game_id: UUID) -> CanonicalGameRecord | None:
+        row = (
+            await self.session.execute(
+                select(CanonicalGameModel, RawReplayModel.source, RawReplayModel.external_id)
+                .join(RawReplayModel, RawReplayModel.id == CanonicalGameModel.raw_replay_id)
+                .where(CanonicalGameModel.id == game_id)
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        model, source, external_id = row
+        return CanonicalGameRecord(
+            game=CanonicalGame.model_validate(model.game_json),
+            source=source,
+            external_id=external_id,
+        )
 
     async def get_game_id_for_replay(self, replay_id: UUID, schema_version: str) -> UUID | None:
         return await self.session.scalar(

@@ -5,6 +5,8 @@ import "./i18n";
 import { setLanguage } from "./i18n";
 import { HomePage } from "./pages/home-page";
 import { SettingsPage } from "./pages/settings-page";
+import { AnalysisDetailPage } from "./pages/analysis-detail-page";
+import { AnalysisListPage } from "./pages/analysis-list-page";
 
 
 type HealthState = "checking" | "online" | "offline";
@@ -40,7 +42,7 @@ function Shell() {
         </NavLink>
         <nav aria-label={t("app.navLabel")}>
           <NavLink to="/">{t("app.nav.search")}</NavLink>
-          <a href="#analysis">{t("app.nav.analysis")}</a>
+          <NavLink to="/analyses">{t("app.nav.analysis")}</NavLink>
           <NavLink to="/settings">{t("app.nav.settings")}</NavLink>
         </nav>
         <div className="topbar__tools">
@@ -53,6 +55,8 @@ function Shell() {
       </header>
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/analyses" element={<AnalysisListPage />} />
+        <Route path="/analyses/:analysisId" element={<AnalysisDetailPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<HomePage />} />
       </Routes>

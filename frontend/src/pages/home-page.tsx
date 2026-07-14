@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import {
   ApiError,
   createAnalysis,
   importReplayLocator,
   listPlayerGames,
-  type GameLuckAnalysis,
   type RemoteGame,
   type RemotePlayer,
   type ReplayImportResult,
@@ -13,15 +13,19 @@ import {
 import { GameTable } from "../components/game-table";
 import { PlayerSearch } from "../components/player-search";
 import { ReplayImport } from "../components/replay-import";
-import { GameAnalysisPage } from "./game-analysis-page";
+import {
+  createProvisionalAnalysis,
+  failProvisionalAnalysis,
+  provisionalGameFromRemote,
+  removeProvisionalAnalysis,
+  type ProvisionalGameSummary,
+} from "../analysis/provisional-tasks";
 
 
 export function HomePage() {
   const { t } = useTranslation("search");
+  const navigate = useNavigate();
   const [selected, setSelected] = useState<RemotePlayer | null>(null);
-  const [analysis, setAnalysis] = useState<GameLuckAnalysis | null>(null);
-  const [analysisGameId, setAnalysisGameId] = useState<string | null>(null);
-  const [analysisState, setAnalysisState] = useState<"idle" | "loading" | "error">("idle");
   const [games, setGames] = useState<RemoteGame[]>([]);
   const [gamesState, setGamesState] = useState<"idle" | "loading" | "error">("idle");
   const [nextCursor, setNextCursor] = useState<number | null>(null);
@@ -58,29 +62,34 @@ export function HomePage() {
     }
   }
 
-  async function handleImported(result: ReplayImportResult) {
+  function startProvisional(game: ProvisionalGameSummary = {}): string {
+    const task = createProvisionalAnalysis(game);
+    navigate(`/analyses/${task.id}`, { state: { provisional: task } });
+    return task.id;
+  }
+
+  async function handleImported(result: ReplayImportResult, provisionalId?: string) {
     if (!result.gameId) {
-      setRecentImportMessage(t("replayImport.error"));
+      failProvisionalAnalysis(provisionalId);
       return;
     }
-    setAnalysisState("loading");
     try {
       const envelope = await createAnalysis(result.gameId);
-      if (!envelope.result) throw new Error("analysis result missing");
-      setAnalysisGameId(result.gameId);
-      setAnalysis(envelope.result);
-      setAnalysisState("idle");
+      removeProvisionalAnalysis(provisionalId);
+      navigate(`/analyses/${envelope.id}`, { replace: true, state: { analysis: envelope } });
     } catch {
-      setAnalysisState("error");
+      failProvisionalAnalysis(provisionalId);
     }
   }
 
   async function importRecentGame(game: RemoteGame) {
     setRecentImportMessage(null);
+    const provisionalId = startProvisional(provisionalGameFromRemote(game));
     try {
       const result = await importReplayLocator(game.uuid);
-      await handleImported(result);
+      await handleImported(result, provisionalId);
     } catch (error) {
+      failProvisionalAnalysis(provisionalId);
       setRecentImportMessage(
         error instanceof ApiError && error.code === "REPLAY_FETCH_UNAVAILABLE"
           ? t("replayImport.fetchUnavailable")
@@ -89,7 +98,6 @@ export function HomePage() {
     }
   }
 
-  if (analysis) return <GameAnalysisPage analysis={analysis} gameId={analysisGameId ?? undefined} onAnalysis={setAnalysis} />;
   return (
     <main className="workspace">
       <header className="workspace-intro">
@@ -106,15 +114,17 @@ export function HomePage() {
             <div><p className="section-index">02</p><h2 id="recent-games-title">{t("gameTable.title")}</h2></div>
             <p>{selected.nickname} · {selected.mode}</p>
           </div>
-          {gamesState === "loading" ? <p className="empty-state">{t("playerSearch.loading")}</p> : <GameTable games={games} onImport={(game) => void importRecentGame(game)} />}
+          {gamesState === "loading" ? <p className="empty-state">{t("playerSearch.loading")}</p> : <GameTable games={games} highlightedPlayerId={selected.externalId} onImport={(game) => void importRecentGame(game)} />}
           {gamesState === "error" && <p className="inline-error">{t("replayImport.error")}</p>}
           {recentImportMessage && <p className="inline-error" role="status">{recentImportMessage}</p>}
           {nextCursor !== null && <button className="load-more" type="button" disabled={loadingMore} onClick={() => void loadMoreGames()}>{t("gameTable.loadMore")}</button>}
         </section>
       )}
-      <ReplayImport onImported={(result) => void handleImported(result)} />
-      {analysisState === "loading" && <p className="analysis-progress" role="status">{t("replayImport.analyzing")}</p>}
-      {analysisState === "error" && <p className="inline-error" role="alert">{t("replayImport.analysisFailed")}</p>}
+      <ReplayImport
+        onImportStarted={(source) => startProvisional({ source })}
+        onImported={(result, provisionalId) => void handleImported(result, provisionalId)}
+        onImportFailed={failProvisionalAnalysis}
+      />
     </main>
   );
 }

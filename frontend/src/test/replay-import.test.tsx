@@ -23,7 +23,7 @@ it("reports a saved replay that cannot be parsed without starting analysis", asy
 
   render(<ReplayImport onImported={onImported} />);
   await userEvent.upload(screen.getByLabelText("牌谱文件"), new File(["{}"], "bad.json", { type: "application/json" }));
-  await userEvent.click(screen.getByRole("button", { name: "导入文件" }));
+  await userEvent.click(screen.getByRole("button", { name: "导入文件并开始分析" }));
 
   expect(await screen.findByText("牌谱已保存，但内容无法解析；请检查文件格式。")).toBeInTheDocument();
   expect(onImported).not.toHaveBeenCalled();

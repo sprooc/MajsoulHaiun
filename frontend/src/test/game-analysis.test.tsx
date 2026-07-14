@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 import { GameAnalysisPage } from "../pages/game-analysis-page";
@@ -32,7 +32,7 @@ const fixtureAnalysis: GameLuckAnalysis = {
       zScore: -0.73,
       score: 39,
       confidence: "medium",
-      actualPoints: -12000,
+      actualPoints: 18100,
       components: { initial_hand: -0.1, self_draw: -0.3 },
     },
   ],
@@ -70,10 +70,11 @@ beforeEach(async () => {
 });
 
 
-it("shows luck score separately from actual score change", () => {
+it("shows luck score separately from the raw final score", () => {
   render(<GameAnalysisPage analysis={fixtureAnalysis} />);
   expect(screen.getByText("72")).toBeInTheDocument();
-  expect(screen.getByText("+31,200")).toBeInTheDocument();
+  expect(screen.getByText("31,200")).toBeInTheDocument();
+  expect(screen.queryByText("+31,200")).not.toBeInTheDocument();
   expect(screen.getByText("实战点数不等于牌运")).toBeInTheDocument();
 });
 
@@ -83,13 +84,52 @@ it("renders accessible red-five information in the event timeline", () => {
   expect(screen.getByLabelText("赤五万")).toBeInTheDocument();
   expect(screen.getByText("σ 0.200")).toBeInTheDocument();
   expect(screen.getByText("候选牌数：63")).toBeInTheDocument();
-  expect(screen.queryByText("不计入主牌运", { exact: false })).not.toBeInTheDocument();
+  expect(within(screen.getByRole("list")).queryByText("不计入主牌运", { exact: false })).not.toBeInTheDocument();
 });
 
 
 it("exposes complete round point details to chart users", () => {
   render(<GameAnalysisPage analysis={fixtureAnalysis} />);
   expect(screen.getByLabelText("east-1 P1：牌运 72，z 1.47，随机偏差 +0.700，置信度 中，实战点数 +8,000")).toBeInTheDocument();
+});
+
+
+it("filters event details and shows player names instead of seat placeholders", async () => {
+  const filteredAnalysis: GameLuckAnalysis = {
+    ...fixtureAnalysis,
+    rounds: [{
+      ...fixtureAnalysis.rounds[0],
+      events: [
+        ...fixtureAnalysis.rounds[0].events,
+        {
+          sequence: 2,
+          player: 1,
+          component: "opponent_gift",
+          actual: 0.4,
+          expected: 0.2,
+          delta: 0.2,
+          variance: 0.01,
+          zScore: 2,
+          includedInTotal: false,
+          explanationKey: "analysis.opponentGift",
+          features: {},
+        },
+      ],
+    }],
+  };
+
+  render(<GameAnalysisPage analysis={filteredAnalysis} />);
+  const timeline = screen.getByRole("list");
+  expect(within(timeline).getByText("东家")).toBeInTheDocument();
+  expect(within(timeline).getByText(/南家/)).toBeInTheDocument();
+  expect(within(timeline).queryByText("P1")).not.toBeInTheDocument();
+
+  await userEvent.selectOptions(screen.getByLabelText("玩家"), "1");
+  expect(within(timeline).queryByText("东家")).not.toBeInTheDocument();
+  expect(within(timeline).getByText(/南家/)).toBeInTheDocument();
+
+  await userEvent.selectOptions(screen.getByLabelText("事件类型"), "self_draw");
+  expect(screen.getByText("没有符合当前筛选条件的事件")).toBeInTheDocument();
 });
 
 

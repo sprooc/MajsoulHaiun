@@ -28,9 +28,11 @@ def test_imported_game_can_be_analyzed_without_network(client):
         "/api/analyses",
         json={"gameId": imported["gameId"], "algorithmId": "baseline-v1", "options": {"eventDetails": True}},
     )
-    assert response.status_code == 200
-    assert response.json()["status"] == "completed"
-    assert len(response.json()["result"]["players"]) == 3
+    assert response.status_code == 202
+    assert response.json()["status"] == "pending"
+    completed = client.get(f"/api/analyses/{response.json()['id']}")
+    assert completed.json()["status"] == "completed"
+    assert len(completed.json()["result"]["players"]) == 3
 
 
 def test_remote_import_rejects_private_network_url(client):
