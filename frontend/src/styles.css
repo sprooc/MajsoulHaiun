@@ -47,6 +47,7 @@ nav a:hover { color: var(--red); }
 nav a.active { color: var(--red); }
 
 .topbar__tools { justify-self: end; display: flex; align-items: center; gap: 1.25rem; }
+.admin-logout { border: 0; border-bottom: 1px solid rgba(23,54,47,.45); padding: .35rem .1rem; background: transparent; color: var(--red); cursor: pointer; font-size: .75rem; }
 .language-switcher { display: flex; border-bottom: 1px solid var(--ink); }
 .language-switcher button { appearance: none; border: 0; padding: .45rem .55rem; background: transparent; color: var(--ink); cursor: pointer; }
 .language-switcher button:hover { color: var(--red); }
@@ -241,6 +242,19 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .page-title { padding: 2rem 0 3rem; border-bottom: 1px solid rgba(23,54,47,.2); }
 .page-title h1 { margin: 0; font: 800 clamp(3rem,7vw,6rem) "Noto Serif SC", serif; }
 
+.admin-access-page { width: min(1120px, calc(100% - 2.5rem)); min-height: calc(100svh - 89px); margin: 0 auto; display: grid; grid-template-columns: 1.15fr .85fr; gap: clamp(3rem, 8vw, 8rem); align-items: center; padding: clamp(3rem, 8vw, 7rem) 0; }
+.admin-access-copy { position: relative; padding: 2rem 0; }
+.admin-access-copy::after { content: ""; position: absolute; right: -3rem; top: 0; width: 1px; height: 100%; background: linear-gradient(transparent, rgba(23,54,47,.38), transparent); }
+.admin-access-copy p { margin: 0; color: var(--red); font-size: .72rem; letter-spacing: .24em; text-transform: uppercase; }
+.admin-access-copy h1 { margin: .6rem 0 1.4rem; font: 900 clamp(4rem, 9vw, 7.6rem)/.92 "Noto Serif SC", serif; letter-spacing: -.07em; }
+.admin-access-copy span { display: block; max-width: 34rem; color: #60736b; line-height: 1.75; }
+.admin-access-form { position: relative; display: grid; gap: 1.4rem; padding: clamp(2rem, 5vw, 3.5rem); border: 1px solid rgba(23,54,47,.22); background: rgba(255,255,255,.34); box-shadow: 0 28px 80px rgba(23,54,47,.12); overflow: hidden; }
+.admin-access-form::before { content: ""; position: absolute; inset: auto -18% -45% 30%; aspect-ratio: 1; border: 18px solid rgba(23,54,47,.055); border-radius: 50%; }
+.admin-access-mark { position: relative; display: grid; place-items: center; width: 68px; aspect-ratio: 1; background: var(--ink); color: var(--paper); border-radius: 50%; font: 900 2rem "Noto Serif SC", serif; transform: rotate(-7deg); }
+.admin-access-form label { position: relative; display: grid; gap: .45rem; color: #60736b; font-size: .78rem; }
+.admin-access-form button { position: relative; min-height: 50px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); cursor: pointer; }
+.admin-access-form .inline-error { position: relative; margin: 0; line-height: 1.5; }
+
 @media (max-width: 900px) {
   .topbar__tools .health { display: none; }
   .section-heading, .analysis-header { grid-template-columns: 1fr; gap: 1rem; }
@@ -251,6 +265,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .event-timeline dl { grid-column: 2 / -1; }
   .analysis-controls { grid-template-columns: 1fr auto; }
   .algorithm-summary { grid-column: 1 / -1; }
+  .admin-access-page { grid-template-columns: 1fr; gap: 1rem; }
+  .admin-access-copy::after { display: none; }
 }
 
 @keyframes rise { from { opacity: 0; transform: translateY(24px); } }

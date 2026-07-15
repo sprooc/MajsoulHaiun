@@ -18,5 +18,16 @@
     "checking": "正在连接本地分析服务",
     "online": "本地服务已连接",
     "offline": "本地服务未连接"
+  },
+  "access": {
+    "kicker": "牌运后台",
+    "title": "管理员访问",
+    "description": "此入口不会出现在公共导航中。验证成功后可查看全部分析任务。",
+    "password": "管理员密码",
+    "submit": "进入分析列表",
+    "submitting": "正在验证",
+    "invalid": "密码不正确或管理员访问尚未配置。",
+    "rateLimited": "尝试次数过多，请稍后再试。",
+    "logout": "退出管理员"
   }
 }

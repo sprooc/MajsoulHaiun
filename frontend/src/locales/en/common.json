@@ -18,5 +18,16 @@
     "checking": "Connecting to the local analyzer",
     "online": "Local service connected",
     "offline": "Local service unavailable"
+  },
+  "access": {
+    "kicker": "Haiun back office",
+    "title": "Administrator access",
+    "description": "This entrance is not shown in public navigation. Successful verification reveals every analysis submission.",
+    "password": "Administrator password",
+    "submit": "Open analysis list",
+    "submitting": "Verifying",
+    "invalid": "The password is incorrect or administrator access is not configured.",
+    "rateLimited": "Too many attempts. Please try again later.",
+    "logout": "Leave administrator mode"
   }
 }

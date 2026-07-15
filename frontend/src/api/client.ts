@@ -1,4 +1,9 @@
 export type GameMode = "4p" | "3p";
+export type AccessRole = "guest" | "admin";
+
+export interface AccessResponse {
+  role: AccessRole;
+}
 
 export interface RemotePlayer {
   source: string;
@@ -193,4 +198,20 @@ export async function getAnalysis(id: string, signal?: AbortSignal): Promise<Ana
 
 export async function listAnalyses(signal?: AbortSignal): Promise<AnalysisEnvelope[]> {
   return jsonRequest("/api/analyses", { signal });
+}
+
+export async function getAccessRole(signal?: AbortSignal): Promise<AccessResponse> {
+  return jsonRequest("/api/access", { signal });
+}
+
+export async function createAdminSession(secret: string): Promise<AccessResponse> {
+  return jsonRequest("/api/admin/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret }),
+  });
+}
+
+export async function deleteAdminSession(): Promise<AccessResponse> {
+  return jsonRequest("/api/admin/session", { method: "DELETE" });
 }
