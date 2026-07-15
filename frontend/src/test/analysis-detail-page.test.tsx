@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -127,7 +127,9 @@ it("keeps the previous result in history when reanalysis creates a new submissio
     </MemoryRouter>,
   );
 
-  await userEvent.click(await screen.findByRole("button", { name: "重新分析" }));
+  const reanalyze = await screen.findByRole("button", { name: "重新分析" });
+  await waitFor(() => expect(reanalyze).toBeEnabled());
+  await userEvent.click(reanalyze);
   expect(await screen.findByTestId("route-path")).toHaveTextContent("/results/analysis-2");
   await userEvent.click(screen.getByRole("button", { name: "返回上一个结果" }));
   expect(await screen.findByTestId("route-path")).toHaveTextContent("/results/analysis-1");
