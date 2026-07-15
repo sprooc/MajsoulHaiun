@@ -45,7 +45,7 @@ def _backfill_unversioned_public_access(database_url: str) -> None:
                     WHERE NOT EXISTS (
                         SELECT 1
                         FROM analysis_submissions AS submission
-                        WHERE submission.analysis_id = analysis.id
+                        WHERE submission.id = analysis.id
                     )
                     """
                 )

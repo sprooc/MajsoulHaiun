@@ -184,7 +184,10 @@ def test_app_startup_advances_alembic_before_serving(tmp_path: Path, monkeypatch
     engine.dispose()
 
 
-def test_app_startup_backfills_unversioned_public_access_schema(tmp_path: Path, monkeypatch):
+def test_app_startup_backfills_missing_legacy_submission_in_unversioned_schema(
+    tmp_path: Path,
+    monkeypatch,
+):
     data_dir = tmp_path / "data"
     monkeypatch.setenv("HAIUN_DATA_DIR", str(data_dir))
     alembic_config = Config("backend/alembic.ini")
@@ -195,6 +198,7 @@ def test_app_startup_backfills_unversioned_public_access_schema(tmp_path: Path, 
     replay_id = f"{1:032x}"
     game_id = f"{2:032x}"
     analysis_id = f"{3:032x}"
+    random_submission_id = f"{4:032x}"
     with engine.begin() as connection:
         connection.execute(
             sa.text(
@@ -230,16 +234,33 @@ def test_app_startup_backfills_unversioned_public_access_schema(tmp_path: Path, 
             ),
             {"id": analysis_id, "game_id": game_id, "options_hash": "c" * 64},
         )
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO analysis_submissions (id, analysis_id)
+                VALUES (:id, :analysis_id)
+                """
+            ),
+            {"id": random_submission_id, "analysis_id": analysis_id},
+        )
         connection.execute(sa.text("DROP TABLE alembic_version"))
 
     upgrade_database(f"sqlite+aiosqlite:///{database_path}")
     upgrade_database(f"sqlite+aiosqlite:///{database_path}")
 
     with engine.connect() as connection:
-        submission = connection.execute(
-            sa.text("SELECT id, analysis_id FROM analysis_submissions")
-        ).mappings().one()
+        submissions = connection.execute(
+            sa.text(
+                """
+                SELECT id, analysis_id
+                FROM analysis_submissions
+                ORDER BY id
+                """
+            )
+        ).mappings().all()
         assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == "0003_public_access"
-    assert submission["id"] == analysis_id
-    assert submission["analysis_id"] == analysis_id
+    assert submissions == [
+        {"id": analysis_id, "analysis_id": analysis_id},
+        {"id": random_submission_id, "analysis_id": analysis_id},
+    ]
     engine.dispose()

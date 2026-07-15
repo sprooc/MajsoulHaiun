@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 import time
-from collections import defaultdict, deque
+from collections import deque
 
 from fastapi import Request
 
@@ -16,20 +16,26 @@ class AdminLoginLimiter:
     def __init__(self, *, max_failures: int = 5, window_seconds: int = 300):
         self.max_failures = max_failures
         self.window_seconds = window_seconds
-        self._failures: dict[str, deque[float]] = defaultdict(deque)
+        self._failures: dict[str, deque[float]] = {}
 
     def _recent(self, key: str) -> deque[float]:
-        failures = self._failures[key]
+        failures = self._failures.get(key)
+        if failures is None:
+            return deque()
         cutoff = time.monotonic() - self.window_seconds
         while failures and failures[0] <= cutoff:
             failures.popleft()
+        if not failures:
+            self._failures.pop(key, None)
         return failures
 
     def is_limited(self, key: str) -> bool:
         return len(self._recent(key)) >= self.max_failures
 
     def record_failure(self, key: str) -> None:
-        self._recent(key).append(time.monotonic())
+        failures = self._recent(key)
+        failures.append(time.monotonic())
+        self._failures[key] = failures
 
     def reset(self, key: str) -> None:
         self._failures.pop(key, None)

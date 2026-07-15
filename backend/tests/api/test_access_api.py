@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.auth import AdminLoginLimiter
 from app.config import Settings
 from app.main import create_app
 
@@ -117,3 +118,19 @@ def test_admin_login_is_rate_limited_after_five_failures(tmp_path: Path):
     assert response.status_code == 429
     assert response.json()["code"] == "ADMIN_AUTH_RATE_LIMITED"
     assert ADMIN_PASSWORD not in response.text
+
+
+def test_admin_login_limiter_prunes_expired_client_keys(monkeypatch):
+    now = 1000.0
+    monkeypatch.setattr("app.auth.time.monotonic", lambda: now)
+    limiter = AdminLoginLimiter(window_seconds=300)
+
+    assert limiter.is_limited("unseen-client") is False
+    assert "unseen-client" not in limiter._failures
+
+    limiter.record_failure("expired-client")
+    assert "expired-client" in limiter._failures
+
+    now += 301
+    assert limiter.is_limited("expired-client") is False
+    assert "expired-client" not in limiter._failures
