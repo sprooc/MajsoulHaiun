@@ -45,7 +45,7 @@ async def create_admin_session(
         raise AppError(
             "ADMIN_AUTH_FAILED",
             "Administrator authentication failed.",
-            status_code=403 if admin is None else 401,
+            status_code=401,
         )
 
     limiter.reset(key)

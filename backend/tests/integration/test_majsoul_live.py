@@ -19,7 +19,7 @@ RECORD_LINK = (
     reason="live Mahjong Soul test disabled",
 )
 def test_live_import_cache_and_analysis(tmp_path: Path):
-    config_path = Path(os.environ["HAIUN_MAJSOUL_CONFIG"])
+    config_path = Path(os.environ["HAIUN_CONFIG"])
     settings = Settings(data_dir=tmp_path / "data", config_path=config_path)
 
     with TestClient(create_app(settings)) as client:

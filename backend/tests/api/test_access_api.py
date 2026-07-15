@@ -32,7 +32,7 @@ def test_guest_role_and_unconfigured_login_stay_locked(tmp_path: Path):
 
         response = client.post("/api/admin/session", json={"secret": ADMIN_PASSWORD})
 
-    assert response.status_code == 403
+    assert response.status_code == 401
     assert response.json()["code"] == "ADMIN_AUTH_FAILED"
     assert ADMIN_PASSWORD not in response.text
 

@@ -57,7 +57,7 @@ def write_config(path: Path):
 
 
 def build_fetcher(tmp_path: Path, results: list[bytes | Exception]):
-    config_path = tmp_path / "majsoul.toml"
+    config_path = tmp_path / "config.toml"
     write_config(config_path)
     factory = FakeClientFactory(results)
     fetcher = MajsoulReplayFetcher(
@@ -138,7 +138,7 @@ async def test_missing_config_is_typed_and_sanitized(tmp_path: Path):
 
 
 async def test_client_factory_failure_is_mapped_to_remote_error(tmp_path: Path):
-    config_path = tmp_path / "majsoul.toml"
+    config_path = tmp_path / "config.toml"
     write_config(config_path)
     http_client = httpx.AsyncClient()
 

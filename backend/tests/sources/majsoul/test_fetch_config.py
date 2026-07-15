@@ -7,7 +7,7 @@ from app.sources.majsoul.fetch_config import MajsoulConfigError, load_majsoul_fe
 
 
 def test_loads_ordered_accounts_and_defaults_host(tmp_path: Path):
-    path = tmp_path / "majsoul.toml"
+    path = tmp_path / "config.toml"
     path.write_text(
         "timeout_seconds = 12\n"
         "[[accounts]]\n"
@@ -76,7 +76,7 @@ def test_missing_optional_file_locks_admin_and_leaves_majsoul_unconfigured(tmp_p
     ],
 )
 def test_rejects_missing_or_invalid_accounts(tmp_path: Path, text: str):
-    path = tmp_path / "majsoul.toml"
+    path = tmp_path / "config.toml"
     path.write_text(text, encoding="utf-8")
 
     with pytest.raises(MajsoulConfigError) as error:

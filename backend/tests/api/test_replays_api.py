@@ -5,6 +5,7 @@ from app.sources.majsoul.fetcher import MajsoulReplayFetcher
 
 
 RECORD_ID = "260307-76323960-cf3c-494e-be24-26dd6ba81c98"
+ADMIN_PASSWORD = "backend-test-admin-password"
 
 
 def test_imported_decoded_replay_returns_canonical_game_id(client):
@@ -33,6 +34,22 @@ def test_imported_game_can_be_analyzed_without_network(client):
     completed = client.get(f"/api/results/{response.json()['id']}")
     assert completed.json()["status"] == "completed"
     assert len(completed.json()["result"]["players"]) == 3
+
+
+def test_replay_delete_requires_administrator_access(client):
+    fixture = Path(__file__).parents[1] / "fixtures" / "majsoul" / "three_player_kita.json"
+    imported = client.post(
+        "/api/replays/import-file",
+        files={"file": ("three-player.json", fixture.read_bytes(), "application/json")},
+    ).json()
+
+    guest_delete = client.delete(f"/api/replays/{imported['replayId']}")
+    assert guest_delete.status_code == 403
+
+    assert client.post("/api/admin/session", json={"secret": ADMIN_PASSWORD}).status_code == 200
+    admin_delete = client.delete(f"/api/replays/{imported['replayId']}")
+    assert admin_delete.status_code == 200
+    assert admin_delete.json() == {"deleted": True}
 
 
 def test_remote_import_rejects_private_network_url(client):

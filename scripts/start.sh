@@ -7,6 +7,7 @@ cd "$root"
 export HAIUN_DATA_DIR="${HAIUN_DATA_DIR:-$root/data}"
 host="${HAIUN_HOST:-0.0.0.0}"
 port="${HAIUN_PORT:-8765}"
+config_path="${HAIUN_CONFIG:-$root/config/config.toml}"
 mkdir -p "$HAIUN_DATA_DIR"
 
 if [ ! -x "$root/.venv/bin/python" ]; then
@@ -48,7 +49,10 @@ if [ "$host" = "0.0.0.0" ]; then
       *) printf 'LAN:      http://%s:%s\n' "$address" "$port" ;;
     esac
   done
-  printf 'Warning: no authentication is enabled. Do not expose this service directly to the public Internet.\n'
+  if [ ! -f "$config_path" ] || ! grep -Eq '^[[:space:]]*\[admin\][[:space:]]*$' "$config_path"; then
+    printf 'Warning: administrator access is not configured; /admin login will remain locked.\n'
+  fi
+  printf 'Public deployment requires a TLS reverse proxy, firewall policy, and request limiting.\n'
 fi
 
 if [ "${HAIUN_OPEN_BROWSER:-1}" != "0" ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open >/dev/null 2>&1; then

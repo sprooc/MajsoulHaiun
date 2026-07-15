@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 from pydantic import BaseModel, ValidationError
 
 from app.errors import AppError
@@ -10,6 +10,7 @@ from app.services.import_service import ImportService
 from app.sources.majsoul.canonicalizer import canonicalize_majsoul
 from app.sources.majsoul.decoder import decode_majsoul
 from app.sources.majsoul.fetcher import MajsoulReplayFetcher
+from app.auth import require_admin
 
 
 router = APIRouter(prefix="/api/replays", tags=["replays"])
@@ -107,7 +108,11 @@ async def get_replay(request: Request, replay_id: UUID) -> dict[str, object]:
 
 
 @router.delete("/{replay_id}")
-async def delete_replay(request: Request, replay_id: UUID) -> dict[str, bool]:
+async def delete_replay(
+    request: Request,
+    replay_id: UUID,
+    _admin: None = Depends(require_admin),
+) -> dict[str, bool]:
     session = request.app.state.session_factory()
     try:
         deleted = await ReplayRepository(session).delete(replay_id)
