@@ -130,7 +130,7 @@ it("keeps the previous result in history when reanalysis creates a new submissio
   const reanalyze = await screen.findByRole("button", { name: "重新分析" });
   await waitFor(() => expect(reanalyze).toBeEnabled());
   await userEvent.click(reanalyze);
-  expect(await screen.findByTestId("route-path")).toHaveTextContent("/results/analysis-2");
+  await waitFor(() => expect(screen.getByTestId("route-path")).toHaveTextContent("/results/analysis-2"));
   await userEvent.click(screen.getByRole("button", { name: "返回上一个结果" }));
-  expect(await screen.findByTestId("route-path")).toHaveTextContent("/results/analysis-1");
+  await waitFor(() => expect(screen.getByTestId("route-path")).toHaveTextContent("/results/analysis-1"));
 });
