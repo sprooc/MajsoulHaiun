@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.migrations import upgrade_database
 
 
 def test_identity_cache_migration_removes_dependent_rows_from_duplicate_game(tmp_path: Path, monkeypatch):
@@ -180,4 +181,65 @@ def test_app_startup_advances_alembic_before_serving(tmp_path: Path, monkeypatch
     engine = sa.create_engine(f"sqlite:///{data_dir / 'haiun.sqlite3'}")
     with engine.connect() as connection:
         assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == "0003_public_access"
+    engine.dispose()
+
+
+def test_app_startup_backfills_unversioned_public_access_schema(tmp_path: Path, monkeypatch):
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("HAIUN_DATA_DIR", str(data_dir))
+    alembic_config = Config("backend/alembic.ini")
+    command.upgrade(alembic_config, "head")
+
+    database_path = data_dir / "haiun.sqlite3"
+    engine = sa.create_engine(f"sqlite:///{database_path}")
+    replay_id = f"{1:032x}"
+    game_id = f"{2:032x}"
+    analysis_id = f"{3:032x}"
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO raw_replays (id, source, external_id, payload, sha256)
+                VALUES (:id, 'fixture', 'replay', :payload, :sha256)
+                """
+            ),
+            {"id": replay_id, "payload": b"raw", "sha256": "a" * 64},
+        )
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO canonical_games
+                    (id, raw_replay_id, schema_version, content_hash, source, external_id, game_json)
+                VALUES (:id, :replay_id, '1.0.0', :content_hash, 'fixture', 'game', :game_json)
+                """
+            ),
+            {
+                "id": game_id,
+                "replay_id": replay_id,
+                "content_hash": "b" * 64,
+                "game_json": "{}",
+            },
+        )
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO analyses
+                    (id, game_id, algorithm_id, algorithm_version, options_hash, status)
+                VALUES (:id, :game_id, 'baseline-v1', '1.0.0', :options_hash, 'completed')
+                """
+            ),
+            {"id": analysis_id, "game_id": game_id, "options_hash": "c" * 64},
+        )
+        connection.execute(sa.text("DROP TABLE alembic_version"))
+
+    upgrade_database(f"sqlite+aiosqlite:///{database_path}")
+    upgrade_database(f"sqlite+aiosqlite:///{database_path}")
+
+    with engine.connect() as connection:
+        submission = connection.execute(
+            sa.text("SELECT id, analysis_id FROM analysis_submissions")
+        ).mappings().one()
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == "0003_public_access"
+    assert submission["id"] == analysis_id
+    assert submission["analysis_id"] == analysis_id
     engine.dispose()
