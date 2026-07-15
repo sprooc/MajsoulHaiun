@@ -134,3 +134,18 @@ def test_admin_login_limiter_prunes_expired_client_keys(monkeypatch):
     now += 301
     assert limiter.is_limited("expired-client") is False
     assert "expired-client" not in limiter._failures
+
+
+def test_admin_login_limiter_globally_prunes_expired_one_shot_keys(monkeypatch):
+    now = 1000.0
+    monkeypatch.setattr("app.auth.time.monotonic", lambda: now)
+    limiter = AdminLoginLimiter(window_seconds=300)
+
+    limiter.record_failure("one-shot-client-1")
+    limiter.record_failure("one-shot-client-2")
+
+    now += 301
+    assert limiter.is_limited("different-client") is False
+    assert "one-shot-client-1" not in limiter._failures
+    assert "one-shot-client-2" not in limiter._failures
+    assert "different-client" not in limiter._failures

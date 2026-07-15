@@ -17,12 +17,26 @@ class AdminLoginLimiter:
         self.max_failures = max_failures
         self.window_seconds = window_seconds
         self._failures: dict[str, deque[float]] = {}
+        self._prune_interval_seconds = max(1, min(window_seconds, 60))
+        self._next_global_prune = time.monotonic() + self._prune_interval_seconds
 
-    def _recent(self, key: str) -> deque[float]:
+    def _prune_expired(self, now: float) -> None:
+        if now < self._next_global_prune:
+            return
+        cutoff = now - self.window_seconds
+        for key, failures in list(self._failures.items()):
+            while failures and failures[0] <= cutoff:
+                failures.popleft()
+            if not failures:
+                self._failures.pop(key, None)
+        self._next_global_prune = now + self._prune_interval_seconds
+
+    def _recent(self, key: str, now: float) -> deque[float]:
+        self._prune_expired(now)
         failures = self._failures.get(key)
         if failures is None:
             return deque()
-        cutoff = time.monotonic() - self.window_seconds
+        cutoff = now - self.window_seconds
         while failures and failures[0] <= cutoff:
             failures.popleft()
         if not failures:
@@ -30,11 +44,13 @@ class AdminLoginLimiter:
         return failures
 
     def is_limited(self, key: str) -> bool:
-        return len(self._recent(key)) >= self.max_failures
+        now = time.monotonic()
+        return len(self._recent(key, now)) >= self.max_failures
 
     def record_failure(self, key: str) -> None:
-        failures = self._recent(key)
-        failures.append(time.monotonic())
+        now = time.monotonic()
+        failures = self._recent(key, now)
+        failures.append(now)
         self._failures[key] = failures
 
     def reset(self, key: str) -> None:
