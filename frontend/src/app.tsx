@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BrowserRouter, NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import "./i18n";
 import { setLanguage } from "./i18n";
 import { HomePage } from "./pages/home-page";
@@ -12,6 +12,11 @@ import { AccessProvider, RequireAdmin, useAccess } from "./access/access-context
 
 
 type HealthState = "checking" | "online" | "offline";
+
+function LegacyAnalysisRedirect() {
+  const { analysisId } = useParams();
+  return <Navigate to={analysisId ? `/results/${analysisId}` : "/"} replace />;
+}
 
 function HealthStatus() {
   const { t } = useTranslation();
@@ -67,7 +72,8 @@ function Shell() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/analyses" element={<RequireAdmin><AnalysisListPage /></RequireAdmin>} />
-        <Route path="/analyses/:analysisId" element={<AnalysisDetailPage />} />
+        <Route path="/results/:analysisId" element={<AnalysisDetailPage />} />
+        <Route path="/analyses/:analysisId" element={<LegacyAnalysisRedirect />} />
         <Route path="/admin" element={<AdminAccessPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<HomePage />} />

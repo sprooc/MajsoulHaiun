@@ -1,4 +1,9 @@
 from uuid import uuid4
+import sqlite3
+
+from fastapi.testclient import TestClient
+
+from app.main import create_app
 
 
 ADMIN_PASSWORD = "backend-test-admin-password"
@@ -63,3 +68,28 @@ def test_get_missing_analysis_is_typed(client):
     response = client.get(f"/api/results/{uuid4()}")
     assert response.status_code == 404
     assert response.json()["code"] == "ANALYSIS_NOT_FOUND"
+
+
+def test_startup_backfills_existing_cached_analyses_without_submissions(settings):
+    with TestClient(create_app(settings)) as client:
+        imported = client.post(
+            "/api/replays/import-file",
+            files={"file": ("game.json", b'{"schema_version":"1.0.0","source":"fixture","external_id":"legacy","rules":{"player_count":4,"game_length":"south","initial_score":25000,"red_fives":{"m":1,"p":1,"s":1},"open_tanyao":true,"tsumo_loss":null,"kita_enabled":false,"tile_codes":["1m"],"source_rules":{}},"players":[{"seat":0,"name":"A"},{"seat":1,"name":"B"},{"seat":2,"name":"C"},{"seat":3,"name":"D"}],"rounds":[],"final_scores":[41000,25000,19000,15000],"final_ranks":[1,2,3,4],"diagnostics":[]}', "application/json")},
+        ).json()
+        client.post(
+            "/api/analyses",
+            json={"gameId": imported["gameId"], "algorithmId": "baseline-v1", "options": {"eventDetails": True}},
+        )
+
+    with sqlite3.connect(settings.data_dir / "haiun.sqlite3") as connection:
+        analysis_id = connection.execute("SELECT id FROM analyses").fetchone()[0]
+        connection.execute("DELETE FROM analysis_submissions")
+        connection.commit()
+
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/api/admin/session", json={"secret": ADMIN_PASSWORD}).status_code == 200
+        listed = client.get("/api/analyses").json()
+        result = client.get(f"/api/results/{analysis_id}")
+
+    assert [item["id"].replace("-", "") for item in listed] == [analysis_id]
+    assert result.status_code == 200

@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AnalysisDetailPage } from "../pages/analysis-detail-page";
 import { setLanguage } from "../i18n";
 
@@ -36,6 +37,12 @@ const result = {
   rounds: [],
 };
 
+function RouteProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return <><output data-testid="route-path">{location.pathname}</output><button type="button" onClick={() => navigate(-1)}>返回上一个结果</button></>;
+}
+
 
 beforeEach(async () => {
   await setLanguage("zh-CN");
@@ -55,8 +62,8 @@ it("renders a provisional task without requesting a backend analysis id", async 
   vi.stubGlobal("fetch", fetchMock);
 
   render(
-    <MemoryRouter initialEntries={["/analyses/provisional-1"]}>
-      <Routes><Route path="/analyses/:analysisId" element={<AnalysisDetailPage />} /></Routes>
+    <MemoryRouter initialEntries={["/results/provisional-1"]}>
+      <Routes><Route path="/results/:analysisId" element={<AnalysisDetailPage />} /></Routes>
     </MemoryRouter>,
   );
 
@@ -82,8 +89,8 @@ it("shows basic game facts while pending, then adds the completed result and rem
   );
 
   render(
-    <MemoryRouter initialEntries={["/analyses/analysis-1"]}>
-      <Routes><Route path="/analyses/:analysisId" element={<AnalysisDetailPage />} /></Routes>
+    <MemoryRouter initialEntries={["/results/analysis-1"]}>
+      <Routes><Route path="/results/:analysisId" element={<AnalysisDetailPage />} /></Routes>
     </MemoryRouter>,
   );
 
@@ -98,4 +105,30 @@ it("shows basic game facts while pending, then adds the completed result and rem
   expect(screen.getAllByText("终局点数").length).toBeGreaterThan(0);
   expect(screen.getAllByText("31,200")).toHaveLength(2);
   expect(screen.queryByText("+31,200")).not.toBeInTheDocument();
+});
+
+
+it("keeps the previous result in history when reanalysis creates a new submission", async () => {
+  const first = { id: "analysis-1", gameId: "game-1", status: "completed", createdAt: "2026-07-14T12:00:00Z", game, result };
+  const second = { ...first, id: "analysis-2" };
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "/api/algorithms") return Promise.resolve(new Response(JSON.stringify([
+      { id: "baseline-v1", version: "1.0.0", nameKey: "algorithms.baselineV1.name", descriptionKey: "algorithms.baselineV1.description", supports: ["4p", "3p"] },
+    ]), { status: 200 }));
+    if (url === "/api/analyses") return Promise.resolve(new Response(JSON.stringify(second), { status: 202 }));
+    if (url === "/api/results/analysis-2") return Promise.resolve(new Response(JSON.stringify(second), { status: 200 }));
+    return Promise.resolve(new Response(JSON.stringify(first), { status: 200 }));
+  }));
+
+  render(
+    <MemoryRouter initialEntries={[{ pathname: "/results/analysis-1", state: { analysis: first } }]}>
+      <Routes><Route path="/results/:analysisId" element={<><AnalysisDetailPage /><RouteProbe /></>} /></Routes>
+    </MemoryRouter>,
+  );
+
+  await userEvent.click(await screen.findByRole("button", { name: "重新分析" }));
+  expect(await screen.findByTestId("route-path")).toHaveTextContent("/results/analysis-2");
+  await userEvent.click(screen.getByRole("button", { name: "返回上一个结果" }));
+  expect(await screen.findByTestId("route-path")).toHaveTextContent("/results/analysis-1");
 });

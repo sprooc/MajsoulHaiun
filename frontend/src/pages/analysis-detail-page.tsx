@@ -79,7 +79,7 @@ export function AnalysisDetailPage() {
       const next = getProvisionalAnalysis(analysisId);
       if (next?.status === "resolved" && next.analysisId) {
         removeProvisionalAnalysis(next.id);
-        navigate(`/analyses/${next.analysisId}`, { replace: true });
+        navigate(`/results/${next.analysisId}`, { replace: true });
         return;
       }
       setProvisional(next);
@@ -144,7 +144,7 @@ export function AnalysisDetailPage() {
           onAnalysisCreated={(next) => {
             setEnvelope(next);
             previousStatus.current = next.status;
-            navigate(`/analyses/${next.id}`, { replace: true, state: { analysis: next } });
+            navigate(`/results/${next.id}`, { state: { analysis: next } });
           }}
         />
       )}

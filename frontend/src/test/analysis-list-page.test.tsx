@@ -73,5 +73,5 @@ it("shows pending and completed analyses and only links completed results", asyn
   expect(screen.getByText("A · B · C · D")).toBeInTheDocument();
   expect(screen.getByText("东 · 南 · 西")).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: /A · B · C · D/ })).not.toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /东 · 南 · 西/ })).toHaveAttribute("href", "/analyses/completed-1");
+  expect(screen.getByRole("link", { name: /东 · 南 · 西/ })).toHaveAttribute("href", "/results/completed-1");
 });

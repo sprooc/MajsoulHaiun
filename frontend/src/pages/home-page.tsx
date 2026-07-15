@@ -67,7 +67,7 @@ export function HomePage() {
 
   function startProvisional(game: ProvisionalGameSummary = {}): string {
     const task = createProvisionalAnalysis(game);
-    navigate(`/analyses/${task.id}`, { state: { provisional: task } });
+    navigate(`/results/${task.id}`, { state: { provisional: task } });
     return task.id;
   }
 

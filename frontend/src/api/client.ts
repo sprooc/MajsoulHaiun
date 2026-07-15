@@ -193,7 +193,7 @@ export async function createAnalysis(gameId: string, algorithmId = "baseline-v1"
 }
 
 export async function getAnalysis(id: string, signal?: AbortSignal): Promise<AnalysisEnvelope> {
-  return jsonRequest(`/api/analyses/${id}`, { signal });
+  return jsonRequest(`/api/results/${id}`, { signal });
 }
 
 export async function listAnalyses(signal?: AbortSignal): Promise<AnalysisEnvelope[]> {

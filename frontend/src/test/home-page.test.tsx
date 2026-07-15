@@ -68,7 +68,7 @@ it("opens a provisional analysis page before the remote replay finishes loading"
     <MemoryRouter>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/analyses/:analysisId" element={<h1>分析中页面</h1>} />
+        <Route path="/results/:analysisId" element={<h1>分析中页面</h1>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -93,7 +93,7 @@ it("does not redirect back to analysis after the user leaves the provisional pag
     <MemoryRouter>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/analyses/:analysisId" element={<AnalysisProbe />} />
+        <Route path="/results/:analysisId" element={<AnalysisProbe />} />
         <Route path="/settings" element={<h1>设置页面</h1>} />
       </Routes>
     </MemoryRouter>,

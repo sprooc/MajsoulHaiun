@@ -106,7 +106,7 @@ export function AnalysisListPage() {
           <div className="analysis-section__heading"><h2 id="completed-analyses-title">{t("analysis.completedTitle")}</h2><span>{completed.length}</span></div>
           <div className="analysis-task-list">
             {completed.map((analysis) => (
-              <Link className="analysis-task analysis-task--completed" key={analysis.id} to={`/analyses/${analysis.id}`} aria-label={`${playerNames(analysis)} · ${t("analysis.viewResult")}`}>
+              <Link className="analysis-task analysis-task--completed" key={analysis.id} to={`/results/${analysis.id}`} aria-label={`${playerNames(analysis)} · ${t("analysis.viewResult")}`}>
                 {cardBody(analysis)}
                 <em>{t("analysis.viewResult")}</em>
               </Link>

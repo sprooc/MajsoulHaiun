@@ -2,25 +2,44 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from starlette.exceptions import HTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
-from app.api.health import router as health_router
 from app.api.access import router as access_router
 from app.api.analyses import router as analysis_router
+from app.api.health import router as health_router
 from app.api.replays import router as replay_router
 from app.api.sources import router as source_router
-from app.config import REPOSITORY_ROOT, Settings
-from app.config_file import load_haiun_config
-from app.auth import AdminLoginLimiter
 from app.algorithms.baseline_v1 import BaselineV1
 from app.algorithms.registry import AlgorithmRegistry
+from app.auth import AdminLoginLimiter
+from app.config import REPOSITORY_ROOT, Settings
+from app.config_file import load_haiun_config
 from app.db import Base, create_session_factory
 from app.errors import AppError
 from app.sources.amae_koromo import AmaeKoromoSource
 from app.sources.registry import SourceRegistry
 from app import models  # noqa: F401
+
+
+class SPAStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except HTTPException as exc:
+            if (
+                exc.status_code != 404
+                or path == "api"
+                or path.startswith("api/")
+                or scope["method"] not in ("GET", "HEAD")
+            ):
+                raise
+            return await super().get_response("index.html", scope)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -32,6 +51,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = application.state.session_factory.kw["bind"]
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO analysis_submissions (id, analysis_id, created_at)
+                    SELECT analysis.id, analysis.id, analysis.created_at
+                    FROM analyses AS analysis
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM analysis_submissions AS submission
+                        WHERE submission.analysis_id = analysis.id
+                    )
+                    """
+                )
+            )
         yield
         await application.state.http_client.aclose()
         await engine.dispose()
@@ -70,7 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(replay_router)
     static_directory = REPOSITORY_ROOT / "frontend" / "dist"
     if static_directory.is_dir():
-        app.mount("/", StaticFiles(directory=static_directory, html=True), name="frontend")
+        app.mount("/", SPAStaticFiles(directory=static_directory, html=True), name="frontend")
     return app
 
 

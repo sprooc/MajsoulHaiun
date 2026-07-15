@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 import { App } from "../app";
@@ -63,4 +63,24 @@ it("hides the analysis list from guests and redirects direct list access", async
   expect(await screen.findByRole("heading", { name: "牌运", level: 1 })).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "分析" })).not.toBeInTheDocument();
   expect(window.location.pathname).toBe("/");
+});
+
+
+it("redirects a legacy analysis detail bookmark to its public result URL", async () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  window.history.pushState({}, "", `/analyses/${id}`);
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "/api/health") return Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+    if (url === "/api/access") return Promise.resolve(new Response(JSON.stringify({ role: "guest" }), { status: 200 }));
+    return Promise.resolve(new Response(JSON.stringify({
+      code: "ANALYSIS_NOT_FOUND",
+      message: "missing",
+      parameters: {},
+    }), { status: 404, headers: { "Content-Type": "application/json" } }));
+  }));
+
+  render(<App />);
+
+  await waitFor(() => expect(window.location.pathname).toBe(`/results/${id}`));
 });
