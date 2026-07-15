@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from pydantic import AliasGenerator, BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
@@ -78,8 +78,11 @@ async def create_analysis(
 @router.get("/analyses", response_model=list[AnalysisEnvelope], response_model_by_alias=True)
 async def list_analyses(
     request: Request,
+    response: Response,
     _admin: None = Depends(require_admin),
 ) -> list[AnalysisEnvelope]:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Cookie"
     session = request.app.state.session_factory()
     try:
         service = AnalysisService(

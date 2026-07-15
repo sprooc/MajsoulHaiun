@@ -11,6 +11,19 @@ from app.main import create_app
 ADMIN_PASSWORD = "backend-test-admin-password"
 
 
+def test_admin_analysis_list_response_is_private_and_varies_by_cookie(client):
+    assert client.post(
+        "/api/admin/session",
+        json={"secret": ADMIN_PASSWORD},
+    ).status_code == 200
+
+    response = client.get("/api/analyses")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["vary"] == "Cookie"
+
+
 def test_each_create_gets_a_shareable_result_url_while_admin_list_is_protected(client):
     imported = client.post(
         "/api/replays/import-file",

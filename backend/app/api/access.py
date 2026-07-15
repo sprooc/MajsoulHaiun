@@ -16,7 +16,9 @@ class AdminSessionRequest(BaseModel):
 
 
 @router.get("/access")
-async def get_access(request: Request) -> dict[str, str]:
+async def get_access(request: Request, response: Response) -> dict[str, str]:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Cookie"
     return {"role": "admin" if await is_admin_request(request) else "guest"}
 
 

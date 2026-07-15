@@ -37,6 +37,19 @@ def test_guest_role_and_unconfigured_login_stay_locked(tmp_path: Path):
     assert ADMIN_PASSWORD not in response.text
 
 
+def test_access_response_is_private_and_varies_by_cookie(tmp_path: Path):
+    settings = configured_settings(tmp_path)
+    with TestClient(create_app(settings)) as client:
+        guest = client.get("/api/access")
+        client.post("/api/admin/session", json={"secret": ADMIN_PASSWORD})
+        admin = client.get("/api/access")
+
+    assert guest.headers["cache-control"] == "private, no-store"
+    assert guest.headers["vary"] == "Cookie"
+    assert admin.headers["cache-control"] == "private, no-store"
+    assert admin.headers["vary"] == "Cookie"
+
+
 def test_admin_login_sets_session_and_logout_revokes_it(tmp_path: Path):
     settings = configured_settings(tmp_path)
     with TestClient(create_app(settings)) as client:
