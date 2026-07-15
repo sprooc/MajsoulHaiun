@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from mahjong.shanten import Shanten
+from xiangting import PlayerCount as XiangtingPlayerCount
+from xiangting import calculate_necessary_tiles
 
 from app.domain.rules import RuleSet
 from app.domain.tiles import Tile
@@ -37,9 +39,33 @@ def codes_to_34(codes: list[str] | tuple[str, ...]) -> list[int]:
     return result
 
 
+def _legacy_shanten_and_necessary(tile_counts: tuple[int, ...]) -> tuple[int, int]:
+    shanten = _SHANTEN.calculate_shanten(tile_counts)
+    necessary = 0
+    if sum(tile_counts) % 3 != 1:
+        return shanten, necessary
+    for index, count in enumerate(tile_counts):
+        if count >= 4:
+            continue
+        candidate = list(tile_counts)
+        candidate[index] += 1
+        if _SHANTEN.calculate_shanten(candidate) < shanten:
+            necessary |= 1 << index
+    return shanten, necessary
+
+
 @lru_cache(maxsize=250_000)
-def _cached_shanten(normalized_codes: tuple[str, ...]) -> int:
-    return _SHANTEN.calculate_shanten(codes_to_34(normalized_codes))
+def _cached_shanten_and_necessary(tile_counts: tuple[int, ...]) -> tuple[int, int]:
+    try:
+        # Baseline v1 historically used the rule-agnostic mahjong.Shanten engine
+        # for both modes. Three-player legality is applied later in _ukeire_score.
+        replacement_number, necessary = calculate_necessary_tiles(
+            list(tile_counts),
+            XiangtingPlayerCount.FOUR,
+        )
+    except ValueError:
+        return _legacy_shanten_and_necessary(tile_counts)
+    return replacement_number - 1, necessary
 
 
 @dataclass(frozen=True)
@@ -53,8 +79,9 @@ class HandState:
 
     @property
     def shanten(self) -> int:
-        normalized = tuple(sorted(_parse_tile(code).base_code for code in self.codes))
-        return _cached_shanten(normalized)
+        tile_counts = tuple(codes_to_34(self.codes))
+        shanten, _ = _cached_shanten_and_necessary(tile_counts)
+        return shanten
 
 
 def _next_dora(indicator: str) -> str:
@@ -67,15 +94,13 @@ def _next_dora(indicator: str) -> str:
 
 
 def _ukeire_score(state: HandState, rules: RuleSet) -> float:
-    current = state.shanten
-    counts = Counter(_parse_tile(code).base_code for code in state.codes)
+    tile_counts = tuple(codes_to_34(state.codes))
+    _, necessary = _cached_shanten_and_necessary(tile_counts)
     improving = 0
     for code in rules.tile_codes:
-        if counts[code] >= 4:
-            continue
-        candidate = HandState.from_codes([*state.codes, code], list(state.dora_indicators))
-        if candidate.shanten < current:
-            improving += 4 - counts[code]
+        index = tile_index(code)
+        if necessary & (1 << index):
+            improving += 4 - tile_counts[index]
     return min(1.0, improving / 32.0)
 
 

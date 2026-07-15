@@ -1,3 +1,5 @@
+import hashlib
+
 from app.algorithms.baseline_v1.algorithm import CALIBRATION, BaselineV1, score_from_z
 from app.domain.analysis import AnalysisOptions
 from app.domain.events import CallEvent, CallKind, DoraRevealed, RoundStarted, TileDiscarded, TileDrawn, WinEvent
@@ -92,6 +94,13 @@ def test_identical_inputs_return_identical_json():
     first = algorithm.analyze(fixture_game(), AnalysisOptions(event_details=True))
     second = algorithm.analyze(fixture_game(), AnalysisOptions(event_details=True))
     assert first.model_dump_json() == second.model_dump_json()
+
+
+def test_fixture_analysis_keeps_exact_result_hash():
+    payload = BaselineV1().analyze(fixture_game(), AnalysisOptions(event_details=True)).model_dump_json()
+    assert hashlib.sha256(payload.encode()).hexdigest() == (
+        "4da3bf90dca169e15b94a7fc01cc5f923dc89b030f4fa2ce6e38b0a3e53f6da6"
+    )
 
 
 def test_opponent_discard_is_informational_and_excluded_from_luck_total():
