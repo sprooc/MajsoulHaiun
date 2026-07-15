@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { listAnalyses, type AnalysisEnvelope } from "../api/client";
+import { getAnalysis, listAnalyses, type AnalysisEnvelope, type AnalysisSummary } from "../api/client";
 import {
   listProvisionalAnalyses,
   PROVISIONAL_ANALYSES_EVENT,
@@ -9,30 +9,56 @@ import {
 } from "../analysis/provisional-tasks";
 
 
-function playerNames(analysis: AnalysisEnvelope): string {
+function playerNames(analysis: AnalysisSummary): string {
   return [...analysis.game.players]
     .sort((left, right) => left.seat - right.seat)
     .map((player) => player.name)
     .join(" · ");
 }
 
+function mergeAnalysisSummaries(current: AnalysisSummary[], incoming: AnalysisSummary[]): AnalysisSummary[] {
+  const merged = [...current];
+  const positions = new Map(merged.map((analysis, index) => [analysis.id, index]));
+  for (const analysis of incoming) {
+    const position = positions.get(analysis.id);
+    if (position === undefined) {
+      positions.set(analysis.id, merged.length);
+      merged.push(analysis);
+    } else {
+      merged[position] = { ...merged[position], ...analysis };
+    }
+  }
+  return merged;
+}
+
+function summarizeAnalysis(analysis: AnalysisEnvelope): AnalysisSummary {
+  return {
+    id: analysis.id,
+    gameId: analysis.gameId,
+    status: analysis.status,
+    createdAt: analysis.createdAt,
+    game: analysis.game,
+    errorCode: analysis.errorCode,
+  };
+}
+
 export function AnalysisListPage() {
   const { t, i18n } = useTranslation("analysis");
-  const [analyses, setAnalyses] = useState<AnalysisEnvelope[]>([]);
+  const [analyses, setAnalyses] = useState<AnalysisSummary[]>([]);
   const [provisional, setProvisional] = useState<ProvisionalAnalysisTask[]>(listProvisionalAnalyses);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    let timer: number | undefined;
     const refresh = async () => {
       try {
-        const next = await listAnalyses(controller.signal);
-        setAnalyses(next);
+        const page = await listAnalyses({ signal: controller.signal });
+        setAnalyses(page.items);
+        setNextOffset(page.nextOffset);
         setState("ready");
-        if (next.some((analysis) => analysis.status === "pending" || analysis.status === "analyzing")) {
-          timer = window.setTimeout(() => void refresh(), 3000);
-        }
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) setState("error");
       }
@@ -40,23 +66,80 @@ export function AnalysisListPage() {
     void refresh();
     return () => {
       controller.abort();
-      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
     const refresh = () => {
       setProvisional(listProvisionalAnalyses());
-      void listAnalyses().then(setAnalyses);
+      void listAnalyses({ signal: controller.signal }).then((page) => {
+        setAnalyses(page.items);
+        setNextOffset(page.nextOffset);
+        setLoadMoreError(false);
+        setState("ready");
+      }).catch((error) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setState("error");
+      });
     };
     window.addEventListener(PROVISIONAL_ANALYSES_EVENT, refresh);
-    return () => window.removeEventListener(PROVISIONAL_ANALYSES_EVENT, refresh);
+    return () => {
+      controller.abort();
+      window.removeEventListener(PROVISIONAL_ANALYSES_EVENT, refresh);
+    };
   }, []);
+
+  const pollingKey = analyses
+    .filter((analysis) => analysis.status === "pending" || analysis.status === "analyzing")
+    .map((analysis) => analysis.id)
+    .join("|");
+
+  useEffect(() => {
+    if (!pollingKey) return;
+    const controller = new AbortController();
+    const analysisIds = pollingKey.split("|");
+    let stopped = false;
+    let timer: number | undefined;
+
+    const poll = async () => {
+      const results = await Promise.allSettled(
+        analysisIds.map((id) => getAnalysis(id, controller.signal)),
+      );
+      if (stopped) return;
+      const updates = results
+        .filter((result): result is PromiseFulfilledResult<AnalysisEnvelope> => result.status === "fulfilled")
+        .map((result) => summarizeAnalysis(result.value));
+      if (updates.length) setAnalyses((current) => mergeAnalysisSummaries(current, updates));
+      if (!stopped) timer = window.setTimeout(() => void poll(), 3000);
+    };
+
+    timer = window.setTimeout(() => void poll(), 3000);
+    return () => {
+      stopped = true;
+      controller.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [pollingKey]);
+
+  const loadMore = async () => {
+    if (nextOffset === null || loadingMore) return;
+    setLoadingMore(true);
+    setLoadMoreError(false);
+    try {
+      const page = await listAnalyses({ offset: nextOffset });
+      setAnalyses((current) => mergeAnalysisSummaries(current, page.items));
+      setNextOffset(page.nextOffset);
+    } catch {
+      setLoadMoreError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const pending = analyses.filter((analysis) => analysis.status !== "completed");
   const completed = analyses.filter((analysis) => analysis.status === "completed");
 
-  const cardBody = (analysis: AnalysisEnvelope) => (
+  const cardBody = (analysis: AnalysisSummary) => (
     <>
       <div>
         <span>{t(`analysis.modes.${analysis.game.mode}`)}</span>
@@ -113,6 +196,12 @@ export function AnalysisListPage() {
             ))}
           </div>
         </section>
+      )}
+      {loadMoreError && <p className="inline-error" role="status">{t("analysis.listError")}</p>}
+      {nextOffset !== null && (
+        <button className="load-more" type="button" disabled={loadingMore} onClick={() => void loadMore()}>
+          {t("analysis.listLoadMore")}
+        </button>
       )}
     </main>
   );

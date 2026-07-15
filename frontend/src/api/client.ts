@@ -81,14 +81,22 @@ export interface GameLuckAnalysis {
   rounds: RoundLuckAnalysis[];
 }
 
-export interface AnalysisEnvelope {
+export interface AnalysisSummary {
   id: string;
   gameId: string;
   status: string;
   createdAt: string;
   game: AnalysisGameSummary;
-  result?: GameLuckAnalysis | null;
   errorCode?: string | null;
+}
+
+export interface AnalysisEnvelope extends AnalysisSummary {
+  result?: GameLuckAnalysis | null;
+}
+
+export interface AnalysisPage {
+  items: AnalysisSummary[];
+  nextOffset: number | null;
 }
 
 export interface AnalysisGamePlayer {
@@ -196,8 +204,12 @@ export async function getAnalysis(id: string, signal?: AbortSignal): Promise<Ana
   return jsonRequest(`/api/results/${id}`, { signal });
 }
 
-export async function listAnalyses(signal?: AbortSignal): Promise<AnalysisEnvelope[]> {
-  return jsonRequest("/api/analyses", { signal });
+export async function listAnalyses(options: { offset?: number; limit?: number; signal?: AbortSignal } = {}): Promise<AnalysisPage> {
+  const params = new URLSearchParams({
+    offset: String(options.offset ?? 0),
+    limit: String(options.limit ?? 100),
+  });
+  return jsonRequest(`/api/analyses?${params}`, { signal: options.signal });
 }
 
 export async function getAccessRole(signal?: AbortSignal): Promise<AccessResponse> {

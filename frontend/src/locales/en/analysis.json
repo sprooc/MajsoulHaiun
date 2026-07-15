@@ -56,6 +56,7 @@
     "listLoading": "Loading analyses…",
     "listError": "Could not load the analysis list. Try again later.",
     "listEmpty": "No analysis tasks yet.",
+    "listLoadMore": "Load more",
     "pendingTitle": "Analyzing",
     "completedTitle": "Completed",
     "pending": "Analyzing",

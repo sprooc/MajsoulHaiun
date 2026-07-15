@@ -56,6 +56,7 @@
     "listLoading": "正在加载分析列表…",
     "listError": "分析列表加载失败，请稍后重试。",
     "listEmpty": "还没有分析任务。",
+    "listLoadMore": "加载更多",
     "pendingTitle": "分析中",
     "completedTitle": "分析完成",
     "pending": "分析中",
