@@ -88,3 +88,17 @@ def test_identity_cache_migration_removes_dependent_rows_from_duplicate_game(tmp
         assert orphan_players == 0
 
     engine.dispose()
+
+
+def test_public_access_migration_creates_session_and_submission_tables(tmp_path: Path, monkeypatch):
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("HAIUN_DATA_DIR", str(data_dir))
+    alembic_config = Config("backend/alembic.ini")
+
+    command.upgrade(alembic_config, "head")
+
+    engine = sa.create_engine(f"sqlite:///{data_dir / 'haiun.sqlite3'}")
+    inspector = sa.inspect(engine)
+    assert "admin_sessions" in inspector.get_table_names()
+    assert "analysis_submissions" in inspector.get_table_names()
+    engine.dispose()

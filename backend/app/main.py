@@ -7,10 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.health import router as health_router
+from app.api.access import router as access_router
 from app.api.analyses import router as analysis_router
 from app.api.replays import router as replay_router
 from app.api.sources import router as source_router
 from app.config import REPOSITORY_ROOT, Settings
+from app.config_file import load_haiun_config
+from app.auth import AdminLoginLimiter
 from app.algorithms.baseline_v1 import BaselineV1
 from app.algorithms.registry import AlgorithmRegistry
 from app.db import Base, create_session_factory
@@ -35,6 +38,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="牌运 Haiun", version=resolved.version, lifespan=lifespan)
     app.state.settings = resolved
+    app.state.file_config = load_haiun_config(resolved.config_path, missing_ok=True)
+    app.state.admin_login_limiter = AdminLoginLimiter()
     app.state.session_factory = create_session_factory(resolved.database_url)
     app.state.http_client = httpx.AsyncClient()
     source_registry = SourceRegistry()
@@ -59,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_headers=["Content-Type"],
         )
     app.include_router(health_router)
+    app.include_router(access_router)
     app.include_router(analysis_router)
     app.include_router(source_router)
     app.include_router(replay_router)

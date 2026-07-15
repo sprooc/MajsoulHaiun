@@ -26,3 +26,4 @@ def test_application_schema_contains_no_credential_fields(client):
     schema = client.get("/openapi.json").text.lower()
     for forbidden in ("password", "oauth_token", "email_code", "browser_session", "access_token"):
         assert forbidden not in schema
+    assert "/api/admin/session" not in schema

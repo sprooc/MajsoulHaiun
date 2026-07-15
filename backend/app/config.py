@@ -9,7 +9,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="HAIUN_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="HAIUN_",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
     host: str = "0.0.0.0"
     port: int = 8765
