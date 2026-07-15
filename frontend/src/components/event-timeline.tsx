@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { EventLuckDetail, PlayerLuckAnalysis } from "../api/client";
+import { SelectMenu } from "./select-menu";
 import { Tile } from "./tile";
 
 
@@ -36,19 +37,34 @@ export function EventTimeline({ events, players }: { events: EventLuckDetail[]; 
     <section className="analysis-section">
       <div className="analysis-section__heading"><h2>{t("analysis.timeline")}</h2><span>{filtered.length} / {events.length}</span></div>
       {!!events.length && <div className="event-filters">
-        <label><span>{t("analysis.eventTypeFilter")}</span><select aria-label={t("analysis.eventTypeFilter")} value={component} onChange={(event) => setComponent(event.target.value)}>
-          <option value="all">{t("analysis.filterAll")}</option>
-          {components.map((value) => <option key={value} value={value}>{t(componentKeys[value] ?? value)}</option>)}
-        </select></label>
-        <label><span>{t("analysis.playerFilter")}</span><select aria-label={t("analysis.playerFilter")} value={player} onChange={(event) => setPlayer(event.target.value)}>
-          <option value="all">{t("analysis.filterAll")}</option>
-          {players.map((item) => <option key={item.seat} value={String(item.seat)}>{item.name}</option>)}
-        </select></label>
-        <label><span>{t("analysis.scopeFilter")}</span><select aria-label={t("analysis.scopeFilter")} value={scope} onChange={(event) => setScope(event.target.value)}>
-          <option value="all">{t("analysis.filterAll")}</option>
-          <option value="included">{t("analysis.filterIncluded")}</option>
-          <option value="excluded">{t("analysis.filterExcluded")}</option>
-        </select></label>
+        <SelectMenu
+          label={t("analysis.eventTypeFilter")}
+          value={component}
+          options={[
+            { value: "all", label: t("analysis.filterAll") },
+            ...components.map((item) => ({ value: item, label: t(componentKeys[item] ?? item) })),
+          ]}
+          onChange={setComponent}
+        />
+        <SelectMenu
+          label={t("analysis.playerFilter")}
+          value={player}
+          options={[
+            { value: "all", label: t("analysis.filterAll") },
+            ...players.map((item) => ({ value: String(item.seat), label: item.name })),
+          ]}
+          onChange={setPlayer}
+        />
+        <SelectMenu
+          label={t("analysis.scopeFilter")}
+          value={scope}
+          options={[
+            { value: "all", label: t("analysis.filterAll") },
+            { value: "included", label: t("analysis.filterIncluded") },
+            { value: "excluded", label: t("analysis.filterExcluded") },
+          ]}
+          onChange={setScope}
+        />
       </div>}
       {!events.length ? <p>{t("analysis.noEvents")}</p> : !filtered.length ? <p>{t("analysis.noFilteredEvents")}</p> : (
         <ol className="event-timeline">

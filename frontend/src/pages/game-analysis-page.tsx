@@ -5,6 +5,7 @@ import { ComponentBreakdown } from "../components/component-breakdown";
 import { EventTimeline } from "../components/event-timeline";
 import { PlayerLuckComparison } from "../components/player-luck-comparison";
 import { RoundLuckChart } from "../components/round-luck-chart";
+import { SelectMenu } from "../components/select-menu";
 
 
 export function GameAnalysisPage({
@@ -60,12 +61,13 @@ export function GameAnalysisPage({
       {!showHeader && <div className="result-warning result-warning--inline"><strong>{t("analysis.resultIsNotLuck")}</strong><p>{t("analysis.resultHint")}</p></div>}
       {gameId && (
         <div className="analysis-controls">
-          <label>
-            <span>{t("analysis.algorithmSelect")}</span>
-            <select aria-label={t("analysis.algorithmSelect")} value={selectedAlgorithm} onChange={(event) => setSelectedAlgorithm(event.target.value)}>
-              {algorithms.map((algorithm) => <option key={algorithm.id} value={algorithm.id}>{algorithm.id} · v{algorithm.version}</option>)}
-            </select>
-          </label>
+          <SelectMenu
+            label={t("analysis.algorithmSelect")}
+            value={selectedAlgorithm}
+            options={algorithms.map((algorithm) => ({ value: algorithm.id, label: `${algorithm.id} · v${algorithm.version}` }))}
+            onChange={setSelectedAlgorithm}
+            disabled={!algorithms.length}
+          />
           <button type="button" disabled={!algorithms.length || reanalyzing} onClick={() => void reanalyze()}>
             {reanalyzing ? t("analysis.reanalyzing") : t("analysis.reanalyze")}
           </button>

@@ -124,11 +124,13 @@ it("filters event details and shows player names instead of seat placeholders", 
   expect(within(timeline).getByText(/南家/)).toBeInTheDocument();
   expect(within(timeline).queryByText("P1")).not.toBeInTheDocument();
 
-  await userEvent.selectOptions(screen.getByLabelText("玩家"), "1");
+  await userEvent.click(screen.getByRole("combobox", { name: "玩家" }));
+  await userEvent.click(screen.getByRole("option", { name: "南家" }));
   expect(within(timeline).queryByText("东家")).not.toBeInTheDocument();
   expect(within(timeline).getByText(/南家/)).toBeInTheDocument();
 
-  await userEvent.selectOptions(screen.getByLabelText("事件类型"), "self_draw");
+  await userEvent.click(screen.getByRole("combobox", { name: "事件类型" }));
+  await userEvent.click(screen.getByRole("option", { name: "自摸进张" }));
   expect(screen.getByText("没有符合当前筛选条件的事件")).toBeInTheDocument();
 });
 
@@ -148,7 +150,8 @@ it("loads registered algorithms and requests reanalysis", async () => {
   render(<GameAnalysisPage analysis={fixtureAnalysis} gameId="game-1" onAnalysis={onAnalysis} />);
   expect(await screen.findByText("机会质量基线")).toBeInTheDocument();
   expect(screen.getByText("四人麻将 · 三人麻将", { exact: false })).toBeInTheDocument();
-  await userEvent.selectOptions(await screen.findByLabelText("分析算法"), "alternative-v1");
+  await userEvent.click(await screen.findByRole("combobox", { name: "分析算法" }));
+  await userEvent.click(screen.getByRole("option", { name: "alternative-v1 · v2.0.0" }));
   await userEvent.click(screen.getByRole("button", { name: "重新分析" }));
   expect(onAnalysis).toHaveBeenCalledWith(updated);
   expect(fetch).toHaveBeenLastCalledWith("/api/analyses", expect.objectContaining({ body: expect.stringContaining("alternative-v1") }));
