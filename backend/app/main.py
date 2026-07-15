@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException
 from starlette.responses import Response
 from starlette.types import Scope
@@ -38,6 +39,8 @@ class SPAStaticFiles(StaticFiles):
                 or path == "api"
                 or path.startswith("api/")
                 or scope["method"] not in ("GET", "HEAD")
+                or "." in path.rsplit("/", 1)[-1]
+                or "text/html" not in Headers(scope=scope).get("accept", "").lower()
             ):
                 raise
             return await super().get_response("index.html", scope)
