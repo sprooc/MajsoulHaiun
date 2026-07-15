@@ -1,10 +1,11 @@
 import asyncio
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.algorithms.base import LuckAlgorithm
@@ -191,16 +192,51 @@ async def test_processing_exposes_analyzing_status_while_algorithm_runs(analysis
     await processing
 
 
-async def test_analyses_are_listed_newest_first_with_game_summary(analysis_context):
+async def test_analysis_summaries_are_paginated_newest_first_in_one_query(analysis_context):
     service, algorithm, game_id = analysis_context
-    first = await service.enqueue(game_id, algorithm.id, {"eventDetails": True})
-    second = await service.enqueue(game_id, algorithm.id, {"eventDetails": False})
+    seeded = await service.enqueue(game_id, algorithm.id, {"eventDetails": True})
+    session = service.analysis_repository.session
+    seeded_submission = await service.submission_repository.get(seeded.id)
+    assert seeded_submission is not None
+    analysis_id = seeded_submission.analysis_id
+    await session.delete(seeded_submission)
+    await session.commit()
 
-    analyses = await service.list_submissions()
+    newer_created_at = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+    older_created_at = datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc)
+    session.add_all(
+        [
+            AnalysisSubmissionModel(id=UUID(int=1), analysis_id=analysis_id, created_at=older_created_at),
+            AnalysisSubmissionModel(id=UUID(int=2), analysis_id=analysis_id, created_at=newer_created_at),
+            AnalysisSubmissionModel(id=UUID(int=3), analysis_id=analysis_id, created_at=newer_created_at),
+        ]
+    )
+    await session.commit()
 
-    assert [analysis.id for analysis in analyses] == [second.id, first.id]
-    assert analyses[0].created_at is not None
-    assert analyses[0].game.external_id == "260307-76323960-cf3c-494e-be24-26dd6ba81c98"
+    statements: list[str] = []
+
+    def capture_selects(_connection, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    engine = session.bind
+    assert engine is not None
+    event.listen(engine.sync_engine, "before_cursor_execute", capture_selects)
+    try:
+        first_page = await service.list_submissions(offset=0, limit=2)
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", capture_selects)
+
+    assert [item.id for item in first_page.items] == [UUID(int=3), UUID(int=2)]
+    assert first_page.next_offset == 2
+    assert first_page.items[0].created_at is not None
+    assert first_page.items[0].game.external_id == "260307-76323960-cf3c-494e-be24-26dd6ba81c98"
+    assert len(statements) == 1
+    assert "analyses.result_json" not in statements[0]
+
+    final_page = await service.list_submissions(offset=2, limit=2)
+    assert [item.id for item in final_page.items] == [UUID(int=1)]
+    assert final_page.next_offset is None
 
 
 async def test_options_are_part_of_cache_key(analysis_context):

@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.algorithms.registry import AlgorithmRegistry
 from app.domain.analysis import AnalysisOptions, GameLuckAnalysis
+from app.domain.game import CanonicalGame
 from app.errors import AppError
 from app.models.analysis import AnalysisModel
 from app.repositories.analysis_repository import AnalysisRepository
@@ -40,7 +41,7 @@ class AnalysisGameSummary(BaseModel):
     final_ranks: list[int]
 
 
-class AnalysisEnvelope(BaseModel):
+class AnalysisSummary(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
         alias_generator=AliasGenerator(serialization_alias=to_camel),
@@ -51,8 +52,21 @@ class AnalysisEnvelope(BaseModel):
     created_at: datetime
     status: str
     game: AnalysisGameSummary
-    result: GameLuckAnalysis | None = None
     error_code: str | None = None
+
+
+class AnalysisEnvelope(AnalysisSummary):
+    result: GameLuckAnalysis | None = None
+
+
+class AnalysisPage(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=AliasGenerator(serialization_alias=to_camel),
+    )
+
+    items: list[AnalysisSummary]
+    next_offset: int | None = None
 
 
 class AnalysisService:
@@ -213,15 +227,32 @@ class AnalysisService:
             raise AppError("ANALYSIS_NOT_FOUND", "Analysis was not found.", status_code=404)
         return await self.envelope(submission, model)
 
-    async def list_submissions(self) -> list[AnalysisEnvelope]:
-        envelopes = []
-        for submission in await self.submission_repository.list_all():
-            model = await self.analysis_repository.get(submission.analysis_id)
-            if model is not None:
-                envelopes.append(await self.envelope(submission, model))
-        return envelopes
+    async def list_submissions(self, offset: int = 0, limit: int = 100) -> AnalysisPage:
+        records = await self.submission_repository.list_page(offset, limit)
+        items = [
+            AnalysisSummary(
+                id=record.id,
+                game_id=record.game_id,
+                created_at=record.created_at,
+                status=record.status,
+                game=self._game_summary(
+                    record.game_id,
+                    CanonicalGameRecord(
+                        game=CanonicalGame.model_validate(record.game_json),
+                        source=record.source,
+                        external_id=record.external_id,
+                    ),
+                ),
+                error_code=record.error_code,
+            )
+            for record in records[:limit]
+        ]
+        return AnalysisPage(
+            items=items,
+            next_offset=offset + limit if len(records) > limit else None,
+        )
 
-    async def list(self) -> list[AnalysisEnvelope]:
+    async def list(self) -> AnalysisPage:
         return await self.list_submissions()
 
     async def analyze(

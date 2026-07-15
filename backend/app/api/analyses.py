@@ -1,13 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from pydantic import AliasGenerator, BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from app.domain.analysis import AnalysisOptions
 from app.repositories.analysis_repository import AnalysisRepository
 from app.repositories.replay_repository import ReplayRepository
-from app.services.analysis_service import AnalysisEnvelope, AnalysisService
+from app.services.analysis_service import AnalysisEnvelope, AnalysisPage, AnalysisService
 from app.auth import require_admin
 
 
@@ -75,12 +75,14 @@ async def create_analysis(
         await session.close()
 
 
-@router.get("/analyses", response_model=list[AnalysisEnvelope], response_model_by_alias=True)
+@router.get("/analyses", response_model=AnalysisPage, response_model_by_alias=True)
 async def list_analyses(
     request: Request,
     response: Response,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
     _admin: None = Depends(require_admin),
-) -> list[AnalysisEnvelope]:
+) -> AnalysisPage:
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Vary"] = "Cookie"
     session = request.app.state.session_factory()
@@ -90,7 +92,7 @@ async def list_analyses(
             AnalysisRepository(session),
             request.app.state.algorithm_registry,
         )
-        return await service.list_submissions()
+        return await service.list_submissions(offset=offset, limit=limit)
     finally:
         await session.close()
 

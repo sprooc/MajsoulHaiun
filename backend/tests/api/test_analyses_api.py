@@ -57,10 +57,27 @@ def test_each_create_gets_a_shareable_result_url_while_admin_list_is_protected(c
 
     login = client.post("/api/admin/session", json={"secret": ADMIN_PASSWORD})
     assert login.status_code == 200
-    listed = client.get("/api/analyses").json()
-    assert [item["id"] for item in listed] == [second["id"], queued["id"]]
-    assert all(item["status"] == "completed" for item in listed)
-    assert all(item["createdAt"] for item in listed)
+    listed = client.get("/api/analyses?offset=0&limit=1").json()
+    assert [item["id"] for item in listed["items"]] == [second["id"]]
+    assert listed["nextOffset"] == 1
+    assert listed["items"][0]["status"] == "completed"
+    assert listed["items"][0]["createdAt"]
+    assert "result" not in listed["items"][0]
+
+    final_page = client.get("/api/analyses?offset=1&limit=1").json()
+    assert [item["id"] for item in final_page["items"]] == [queued["id"]]
+    assert final_page["nextOffset"] is None
+
+
+def test_admin_analysis_list_validates_pagination_parameters(client):
+    assert client.post(
+        "/api/admin/session",
+        json={"secret": ADMIN_PASSWORD},
+    ).status_code == 200
+
+    for query in ("offset=-1", "limit=0", "limit=101"):
+        response = client.get(f"/api/analyses?{query}")
+        assert response.status_code == 422
 
 
 def test_lists_registered_algorithms(client):
@@ -113,5 +130,6 @@ def test_startup_backfills_existing_cached_analyses_without_submissions(settings
         listed = client.get("/api/analyses").json()
         result = client.get(f"/api/results/{analysis_id}")
 
-    assert [item["id"].replace("-", "") for item in listed] == [analysis_id]
+    assert [item["id"].replace("-", "") for item in listed["items"]] == [analysis_id]
+    assert listed["nextOffset"] is None
     assert result.status_code == 200

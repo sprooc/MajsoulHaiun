@@ -1,9 +1,25 @@
+from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.access import AnalysisSubmissionModel
+from app.models.analysis import AnalysisModel
+from app.models.game import CanonicalGameModel
+
+
+@dataclass(frozen=True)
+class SubmissionSummaryRecord:
+    id: UUID
+    game_id: UUID
+    created_at: datetime
+    status: str
+    error_code: str | None
+    source: str
+    external_id: str
+    game_json: dict[str, object]
 
 
 class SubmissionRepository:
@@ -20,12 +36,28 @@ class SubmissionRepository:
     async def get(self, submission_id: UUID) -> AnalysisSubmissionModel | None:
         return await self.session.get(AnalysisSubmissionModel, submission_id)
 
-    async def list_all(self) -> list[AnalysisSubmissionModel]:
-        return list(
-            await self.session.scalars(
-                select(AnalysisSubmissionModel).order_by(
+    async def list_page(self, offset: int, limit: int) -> list[SubmissionSummaryRecord]:
+        rows = (
+            await self.session.execute(
+                select(
+                    AnalysisSubmissionModel.id.label("id"),
+                    AnalysisModel.game_id.label("game_id"),
+                    AnalysisSubmissionModel.created_at.label("created_at"),
+                    AnalysisModel.status.label("status"),
+                    AnalysisModel.error_code.label("error_code"),
+                    CanonicalGameModel.source.label("source"),
+                    CanonicalGameModel.external_id.label("external_id"),
+                    CanonicalGameModel.game_json.label("game_json"),
+                )
+                .select_from(AnalysisSubmissionModel)
+                .join(AnalysisModel, AnalysisModel.id == AnalysisSubmissionModel.analysis_id)
+                .join(CanonicalGameModel, CanonicalGameModel.id == AnalysisModel.game_id)
+                .order_by(
                     AnalysisSubmissionModel.created_at.desc(),
                     AnalysisSubmissionModel.id.desc(),
                 )
+                .offset(offset)
+                .limit(limit + 1)
             )
-        )
+        ).mappings()
+        return [SubmissionSummaryRecord(**row) for row in rows]
