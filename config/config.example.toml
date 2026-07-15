@@ -1,0 +1,18 @@
+timeout_seconds = 15
+
+# Mahjong Soul accounts are tried from top to bottom. Keep the real file local
+# and chmod 0600. These credentials are read only by the backend.
+[[accounts]]
+username = "first-account@example.com"
+password = "replace-me"
+host = "https://game.maj-soul.com"
+
+[[accounts]]
+username = "second-account@example.com"
+password = "replace-me"
+host = "https://game.maj-soul.com"
+
+# The /admin page is deliberately unlinked. Use a long, unique password.
+[admin]
+password = "replace-with-a-long-unique-password"
+session_hours = 12

@@ -15,4 +15,4 @@ data/
 .env
 .direnv/
 result
-/config/majsoul.toml
+/config/config.toml

@@ -20,7 +20,7 @@ RECORD_LINK = (
 )
 def test_live_import_cache_and_analysis(tmp_path: Path):
     config_path = Path(os.environ["HAIUN_MAJSOUL_CONFIG"])
-    settings = Settings(data_dir=tmp_path / "data", majsoul_config_path=config_path)
+    settings = Settings(data_dir=tmp_path / "data", config_path=config_path)
 
     with TestClient(create_app(settings)) as client:
         first = client.post("/api/replays/import-locator", json={"locator": RECORD_LINK})

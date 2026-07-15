@@ -103,7 +103,7 @@ def test_locator_import_uses_app_settings_and_shared_http_client(client, setting
     response = client.post("/api/replays/import-locator", json={"locator": RECORD_ID})
 
     assert response.status_code == 200
-    assert captured["config_path"] == settings.majsoul_config_path
+    assert captured["config_path"] == settings.config_path
     assert captured["http_client"] is client.app.state.http_client
 
 

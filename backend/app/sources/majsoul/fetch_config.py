@@ -1,4 +1,3 @@
-import tomllib
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
@@ -49,15 +48,9 @@ class MajsoulFetchConfig(BaseModel):
 
 
 def load_majsoul_fetch_config(path: Path) -> MajsoulFetchConfig:
-    try:
-        with path.open("rb") as config_file:
-            raw = tomllib.load(config_file)
-    except FileNotFoundError:
-        raise MajsoulConfigError(f"Mahjong Soul configuration file was not found: {path}") from None
-    except (OSError, tomllib.TOMLDecodeError):
-        raise MajsoulConfigError(f"Invalid Mahjong Soul configuration file: {path}") from None
+    from app.config_file import HaiunConfigError, load_haiun_config
 
     try:
-        return MajsoulFetchConfig.model_validate(raw)
-    except ValidationError:
+        return load_haiun_config(path).majsoul
+    except (HaiunConfigError, ValidationError):
         raise MajsoulConfigError(f"Invalid Mahjong Soul configuration file: {path}") from None

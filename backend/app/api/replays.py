@@ -23,7 +23,7 @@ async def _service(request: Request):
     session = request.app.state.session_factory()
     repository = ReplayRepository(session)
     fetcher = MajsoulReplayFetcher(
-        request.app.state.settings.majsoul_config_path,
+        request.app.state.settings.config_path,
         request.app.state.http_client,
     )
     return session, repository, ImportService(repository, fetcher)

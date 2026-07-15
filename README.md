@@ -46,16 +46,16 @@ npm --prefix frontend install
 
 随后运行 `scripts/dev.sh` 或 `scripts/start.sh`。脚本从自身路径解析仓库根目录，因此可从任意工作目录启动。
 
-## 雀魂牌谱账号配置
+## 后端配置
 
-完整雀魂牌谱通过后端本地 TOML 中的账号获取。复制示例文件：
+管理员访问与完整雀魂牌谱账号使用同一个后端本地 TOML。复制示例文件：
 
 ```bash
-cp config/majsoul.example.toml config/majsoul.toml
-chmod 600 config/majsoul.toml
+cp config/config.example.toml config/config.toml
+chmod 600 config/config.toml
 ```
 
-在 `config/majsoul.toml` 中按优先顺序配置一个或多个国服账号：
+在 `config/config.toml` 中按优先顺序配置一个或多个国服账号，并设置管理员密码：
 
 ```toml
 timeout_seconds = 15
@@ -68,9 +68,13 @@ host = "https://game.maj-soul.com"
 [[accounts]]
 username = "备用账号"
 password = "备用账号密码"
+
+[admin]
+password = "请替换为足够长且唯一的管理员密码"
+session_hours = 12
 ```
 
-后端会按 `[[accounts]]` 的书写顺序尝试；某个账号登录失败或无权访问牌谱时继续下一个账号。`HAIUN_MAJSOUL_CONFIG` 可覆盖配置文件路径。真实配置文件已被 Git 忽略，不要把账号密码写入示例文件、README、日志或提交记录。当前账号密码登录方式面向雀魂国服；OAuth、邮件验证码和浏览器会话不在支持范围内。
+后端会按 `[[accounts]]` 的书写顺序尝试；某个账号登录失败或无权访问牌谱时继续下一个账号。`HAIUN_CONFIG` 可覆盖配置文件路径。真实配置文件已被 Git 忽略，不要把账号密码或管理员密码写入示例文件、README、日志或提交记录。当前账号密码登录方式面向雀魂国服；OAuth、邮件验证码和浏览器会话不在支持范围内。
 
 ## 网络与安全
 
