@@ -64,6 +64,41 @@ def test_missing_optional_file_locks_admin_and_leaves_majsoul_unconfigured(tmp_p
     assert config.accounts == ()
 
 
+def test_invalid_majsoul_section_does_not_disable_valid_admin(tmp_path: Path):
+    from app.config_file import load_haiun_config
+
+    path = tmp_path / "config.toml"
+    path.write_text(
+        "[[accounts]]\nusername = 'missing-password'\n"
+        "[admin]\npassword = 'valid-admin-password'\n",
+        encoding="utf-8",
+    )
+
+    config = load_haiun_config(path)
+
+    assert config.majsoul is None
+    assert config.admin is not None
+    assert config.admin.password.get_secret_value() == "valid-admin-password"
+
+
+def test_invalid_admin_section_does_not_disable_valid_majsoul(tmp_path: Path):
+    from app.config_file import load_haiun_config
+
+    path = tmp_path / "config.toml"
+    path.write_text(
+        "[[accounts]]\nusername = 'valid-user'\npassword = 'valid-secret'\n"
+        "[admin]\npassword = 'short'\n",
+        encoding="utf-8",
+    )
+
+    config = load_haiun_config(path)
+
+    assert config.admin is None
+    assert config.majsoul is not None
+    assert config.majsoul.accounts[0].username == "valid-user"
+    assert load_majsoul_fetch_config(path).accounts[0].username == "valid-user"
+
+
 @pytest.mark.parametrize(
     "text",
     [

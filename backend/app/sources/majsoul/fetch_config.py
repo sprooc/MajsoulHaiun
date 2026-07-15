@@ -51,6 +51,9 @@ def load_majsoul_fetch_config(path: Path) -> MajsoulFetchConfig:
     from app.config_file import HaiunConfigError, load_haiun_config
 
     try:
-        return load_haiun_config(path).majsoul
-    except (HaiunConfigError, ValidationError):
+        config = load_haiun_config(path)
+    except HaiunConfigError:
         raise MajsoulConfigError(f"Invalid Mahjong Soul configuration file: {path}") from None
+    if config.majsoul is None:
+        raise MajsoulConfigError(f"Invalid Mahjong Soul configuration file: {path}") from None
+    return config.majsoul

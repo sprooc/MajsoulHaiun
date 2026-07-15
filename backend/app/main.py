@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 import httpx
@@ -5,7 +6,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
 from starlette.exceptions import HTTPException
 from starlette.responses import Response
 from starlette.types import Scope
@@ -19,9 +19,10 @@ from app.algorithms.baseline_v1 import BaselineV1
 from app.algorithms.registry import AlgorithmRegistry
 from app.auth import AdminLoginLimiter
 from app.config import REPOSITORY_ROOT, Settings
-from app.config_file import load_haiun_config
-from app.db import Base, create_session_factory
+from app.config_file import HaiunConfigError, HaiunFileConfig, load_haiun_config
+from app.db import create_session_factory
 from app.errors import AppError
+from app.migrations import upgrade_database
 from app.sources.amae_koromo import AmaeKoromoSource
 from app.sources.registry import SourceRegistry
 from app import models  # noqa: F401
@@ -48,30 +49,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
+        await asyncio.to_thread(upgrade_database, resolved.database_url)
         engine = application.state.session_factory.kw["bind"]
-        async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
-            await connection.execute(
-                text(
-                    """
-                    INSERT INTO analysis_submissions (id, analysis_id, created_at)
-                    SELECT analysis.id, analysis.id, analysis.created_at
-                    FROM analyses AS analysis
-                    WHERE NOT EXISTS (
-                        SELECT 1
-                        FROM analysis_submissions AS submission
-                        WHERE submission.analysis_id = analysis.id
-                    )
-                    """
-                )
-            )
         yield
         await application.state.http_client.aclose()
         await engine.dispose()
 
     app = FastAPI(title="牌运 Haiun", version=resolved.version, lifespan=lifespan)
     app.state.settings = resolved
-    app.state.file_config = load_haiun_config(resolved.config_path, missing_ok=True)
+    try:
+        app.state.file_config = load_haiun_config(resolved.config_path, missing_ok=True)
+    except HaiunConfigError:
+        app.state.file_config = HaiunFileConfig()
     app.state.admin_login_limiter = AdminLoginLimiter()
     app.state.session_factory = create_session_factory(resolved.database_url)
     app.state.http_client = httpx.AsyncClient()

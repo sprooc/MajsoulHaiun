@@ -20,16 +20,16 @@ class AdminConfig(BaseModel):
 class HaiunFileConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    timeout_seconds: float = Field(default=15.0, gt=0, le=120)
-    accounts: tuple[MajsoulAccount, ...] = ()
+    majsoul: MajsoulFetchConfig | None = None
     admin: AdminConfig | None = None
 
     @property
-    def majsoul(self) -> MajsoulFetchConfig:
-        return MajsoulFetchConfig(
-            timeout_seconds=self.timeout_seconds,
-            accounts=self.accounts,
-        )
+    def timeout_seconds(self) -> float:
+        return self.majsoul.timeout_seconds if self.majsoul is not None else 15.0
+
+    @property
+    def accounts(self) -> tuple[MajsoulAccount, ...]:
+        return self.majsoul.accounts if self.majsoul is not None else ()
 
 
 def load_haiun_config(path: Path, *, missing_ok: bool = False) -> HaiunFileConfig:
@@ -43,7 +43,23 @@ def load_haiun_config(path: Path, *, missing_ok: bool = False) -> HaiunFileConfi
     except (OSError, tomllib.TOMLDecodeError):
         raise HaiunConfigError(f"Invalid Haiun configuration file: {path}") from None
 
-    try:
-        return HaiunFileConfig.model_validate(raw)
-    except ValidationError:
-        raise HaiunConfigError(f"Invalid Haiun configuration file: {path}") from None
+    majsoul = None
+    majsoul_raw = {
+        key: raw[key]
+        for key in ("timeout_seconds", "accounts")
+        if key in raw
+    }
+    if majsoul_raw:
+        try:
+            majsoul = MajsoulFetchConfig.model_validate(majsoul_raw)
+        except ValidationError:
+            pass
+
+    admin = None
+    if "admin" in raw:
+        try:
+            admin = AdminConfig.model_validate(raw["admin"])
+        except ValidationError:
+            pass
+
+    return HaiunFileConfig(majsoul=majsoul, admin=admin)

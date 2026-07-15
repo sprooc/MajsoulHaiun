@@ -12,9 +12,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-settings = Settings()
-settings.data_dir.mkdir(parents=True, exist_ok=True)
-config.set_main_option("sqlalchemy.url", settings.database_url.replace("+aiosqlite", ""))
+database_url = config.attributes.get("database_url")
+if database_url is None:
+    settings = Settings()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    database_url = settings.database_url.replace("+aiosqlite", "")
+config.set_main_option("sqlalchemy.url", database_url)
 target_metadata = Base.metadata
 
 

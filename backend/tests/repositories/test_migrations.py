@@ -3,6 +3,10 @@ from pathlib import Path
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
+
+from app.config import Settings
+from app.main import create_app
 
 
 def test_identity_cache_migration_removes_dependent_rows_from_duplicate_game(tmp_path: Path, monkeypatch):
@@ -158,4 +162,22 @@ def test_public_access_migration_backfills_existing_analyses(tmp_path: Path, mon
         ).mappings().one()
     assert submission["id"] == analysis_id
     assert submission["analysis_id"] == analysis_id
+    engine.dispose()
+
+
+def test_app_startup_advances_alembic_before_serving(tmp_path: Path, monkeypatch):
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("HAIUN_DATA_DIR", str(data_dir))
+    alembic_config = Config("backend/alembic.ini")
+    command.upgrade(alembic_config, "0002_cache_raw_replay_identity")
+
+    settings = Settings(data_dir=data_dir, config_path=tmp_path / "missing.toml")
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/api/health").status_code == 200
+
+    command.upgrade(alembic_config, "head")
+
+    engine = sa.create_engine(f"sqlite:///{data_dir / 'haiun.sqlite3'}")
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == "0003_public_access"
     engine.dispose()

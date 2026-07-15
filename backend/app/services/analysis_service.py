@@ -175,6 +175,10 @@ class AnalysisService:
             raise AppError("ANALYSIS_NOT_FOUND", "Analysis was not found.", status_code=404)
         if model.status != "pending":
             return await self.envelope(submission, model)
+        if not await self.analysis_repository.claim_pending(model.id):
+            await self.analysis_repository.session.refresh(model)
+            return await self.envelope(submission, model)
+        await self.analysis_repository.session.refresh(model)
 
         algorithm = self.algorithms.get(model.algorithm_id)
         options = raw_options if isinstance(raw_options, AnalysisOptions) else AnalysisOptions.model_validate(raw_options)
@@ -183,8 +187,6 @@ class AnalysisService:
             raise AppError("GAME_NOT_FOUND", "Canonical game was not found.", status_code=404)
 
         try:
-            model.status = "analyzing"
-            await self.analysis_repository.save(model)
             result = await asyncio.to_thread(algorithm.analyze, record.game, options)
             model.status = "completed"
             await self.analysis_repository.save_result(model, result)

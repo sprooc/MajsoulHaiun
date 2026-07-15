@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.analysis import GameLuckAnalysis
@@ -47,6 +47,18 @@ class AnalysisRepository:
         await self.session.commit()
         await self.session.refresh(model)
         return model
+
+    async def claim_pending(self, analysis_id: UUID) -> bool:
+        result = await self.session.execute(
+            update(AnalysisModel)
+            .where(
+                AnalysisModel.id == analysis_id,
+                AnalysisModel.status == "pending",
+            )
+            .values(status="analyzing")
+        )
+        await self.session.commit()
+        return result.rowcount == 1
 
     async def save_result(self, model: AnalysisModel, result: GameLuckAnalysis) -> AnalysisModel:
         model.result_json = result.model_dump(mode="json", by_alias=True)

@@ -249,3 +249,63 @@ async def test_deleting_raw_replay_cascades_through_all_analysis_layers(analysis
         EventAnalysisModel,
     ):
         assert await session.scalar(select(func.count()).select_from(model)) == 0
+
+
+async def test_concurrent_submissions_claim_one_cached_computation(tmp_path: Path):
+    engine = create_engine(f"sqlite+aiosqlite:///{tmp_path / 'concurrent.sqlite3'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as setup_session:
+        replay_repository = ReplayRepository(setup_session)
+        replay_id = await replay_repository.put_bytes("fixture", "shared", b"raw")
+        game_id = await replay_repository.put_canonical_game(
+            replay_id,
+            CanonicalGame(
+                source="fixture",
+                external_id="shared",
+                rules=RuleSet.standard_three_player(),
+                players=[Player(seat=seat, name=f"P{seat}") for seat in range(3)],
+                rounds=[],
+                final_scores=[35000] * 3,
+                final_ranks=[1, 2, 3],
+            ),
+        )
+
+    algorithm = CountingAlgorithm()
+    original_analyze = algorithm.analyze
+
+    def slow_analyze(game, options):
+        time.sleep(0.1)
+        return original_analyze(game, options)
+
+    algorithm.analyze = slow_analyze
+    registry = AlgorithmRegistry()
+    registry.register(algorithm)
+
+    async with factory() as first_session, factory() as second_session:
+        first_service = AnalysisService(
+            ReplayRepository(first_session),
+            AnalysisRepository(first_session),
+            registry,
+        )
+        second_service = AnalysisService(
+            ReplayRepository(second_session),
+            AnalysisRepository(second_session),
+            registry,
+        )
+        first = await first_service.enqueue(game_id, algorithm.id, {"eventDetails": True})
+        second = await second_service.enqueue(game_id, algorithm.id, {"eventDetails": True})
+
+        await asyncio.gather(
+            first_service.process(first.id, {"eventDetails": True}),
+            second_service.process(second.id, {"eventDetails": True}),
+        )
+
+    async with factory() as assertion_session:
+        assert algorithm.calls == 1
+        assert await assertion_session.scalar(select(func.count()).select_from(PlayerAnalysisModel)) == 3
+        assert await assertion_session.scalar(select(func.count()).select_from(RoundAnalysisModel)) == 1
+        assert await assertion_session.scalar(select(func.count()).select_from(EventAnalysisModel)) == 1
+    await engine.dispose()

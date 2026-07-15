@@ -1,6 +1,8 @@
 from uuid import uuid4
 import sqlite3
 
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -70,20 +72,27 @@ def test_get_missing_analysis_is_typed(client):
     assert response.json()["code"] == "ANALYSIS_NOT_FOUND"
 
 
-def test_startup_backfills_existing_cached_analyses_without_submissions(settings):
-    with TestClient(create_app(settings)) as client:
-        imported = client.post(
-            "/api/replays/import-file",
-            files={"file": ("game.json", b'{"schema_version":"1.0.0","source":"fixture","external_id":"legacy","rules":{"player_count":4,"game_length":"south","initial_score":25000,"red_fives":{"m":1,"p":1,"s":1},"open_tanyao":true,"tsumo_loss":null,"kita_enabled":false,"tile_codes":["1m"],"source_rules":{}},"players":[{"seat":0,"name":"A"},{"seat":1,"name":"B"},{"seat":2,"name":"C"},{"seat":3,"name":"D"}],"rounds":[],"final_scores":[41000,25000,19000,15000],"final_ranks":[1,2,3,4],"diagnostics":[]}', "application/json")},
-        ).json()
-        client.post(
-            "/api/analyses",
-            json={"gameId": imported["gameId"], "algorithmId": "baseline-v1", "options": {"eventDetails": True}},
-        )
-
+def test_startup_backfills_existing_cached_analyses_without_submissions(settings, monkeypatch):
+    monkeypatch.setenv("HAIUN_DATA_DIR", str(settings.data_dir))
+    alembic_config = Config("backend/alembic.ini")
+    command.upgrade(alembic_config, "0002_cache_raw_replay_identity")
+    replay_id = f"{1:032x}"
+    game_id = f"{2:032x}"
+    analysis_id = f"{3:032x}"
+    game_json = '{"schema_version":"1.0.0","source":"fixture","external_id":"legacy","rules":{"player_count":4,"game_length":"south","initial_score":25000,"red_fives":{"m":1,"p":1,"s":1},"open_tanyao":true,"tsumo_loss":null,"kita_enabled":false,"tile_codes":["1m"],"source_rules":{}},"players":[{"seat":0,"name":"A"},{"seat":1,"name":"B"},{"seat":2,"name":"C"},{"seat":3,"name":"D"}],"rounds":[],"final_scores":[41000,25000,19000,15000],"final_ranks":[1,2,3,4],"diagnostics":[]}'
     with sqlite3.connect(settings.data_dir / "haiun.sqlite3") as connection:
-        analysis_id = connection.execute("SELECT id FROM analyses").fetchone()[0]
-        connection.execute("DELETE FROM analysis_submissions")
+        connection.execute(
+            "INSERT INTO raw_replays (id, source, external_id, payload, sha256) VALUES (?, 'fixture', 'legacy', ?, ?)",
+            (replay_id, b"raw", "a" * 64),
+        )
+        connection.execute(
+            "INSERT INTO canonical_games (id, raw_replay_id, schema_version, content_hash, source, external_id, game_json) VALUES (?, ?, '1.0.0', ?, 'fixture', 'legacy', ?)",
+            (game_id, replay_id, "b" * 64, game_json),
+        )
+        connection.execute(
+            "INSERT INTO analyses (id, game_id, algorithm_id, algorithm_version, options_hash, status) VALUES (?, ?, 'baseline-v1', '1.0.0', ?, 'completed')",
+            (analysis_id, game_id, "c" * 64),
+        )
         connection.commit()
 
     with TestClient(create_app(settings)) as client:
