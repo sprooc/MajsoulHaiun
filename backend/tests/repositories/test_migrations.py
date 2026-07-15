@@ -102,3 +102,60 @@ def test_public_access_migration_creates_session_and_submission_tables(tmp_path:
     assert "admin_sessions" in inspector.get_table_names()
     assert "analysis_submissions" in inspector.get_table_names()
     engine.dispose()
+
+
+def test_public_access_migration_backfills_existing_analyses(tmp_path: Path, monkeypatch):
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("HAIUN_DATA_DIR", str(data_dir))
+    alembic_config = Config("backend/alembic.ini")
+    command.upgrade(alembic_config, "0002_cache_raw_replay_identity")
+
+    engine = sa.create_engine(f"sqlite:///{data_dir / 'haiun.sqlite3'}")
+    replay_id = f"{1:032x}"
+    game_id = f"{2:032x}"
+    analysis_id = f"{3:032x}"
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO raw_replays (id, source, external_id, payload, sha256)
+                VALUES (:id, 'fixture', 'replay', :payload, :sha256)
+                """
+            ),
+            {"id": replay_id, "payload": b"raw", "sha256": "a" * 64},
+        )
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO canonical_games
+                    (id, raw_replay_id, schema_version, content_hash, source, external_id, game_json)
+                VALUES (:id, :replay_id, '1.0.0', :content_hash, 'fixture', 'game', :game_json)
+                """
+            ),
+            {
+                "id": game_id,
+                "replay_id": replay_id,
+                "content_hash": "b" * 64,
+                "game_json": "{}",
+            },
+        )
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO analyses
+                    (id, game_id, algorithm_id, algorithm_version, options_hash, status)
+                VALUES (:id, :game_id, 'baseline-v1', '1.0.0', :options_hash, 'completed')
+                """
+            ),
+            {"id": analysis_id, "game_id": game_id, "options_hash": "c" * 64},
+        )
+
+    command.upgrade(alembic_config, "head")
+
+    with engine.connect() as connection:
+        submission = connection.execute(
+            sa.text("SELECT id, analysis_id FROM analysis_submissions")
+        ).mappings().one()
+    assert submission["id"] == analysis_id
+    assert submission["analysis_id"] == analysis_id
+    engine.dispose()

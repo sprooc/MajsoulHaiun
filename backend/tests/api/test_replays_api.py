@@ -30,7 +30,7 @@ def test_imported_game_can_be_analyzed_without_network(client):
     )
     assert response.status_code == 202
     assert response.json()["status"] == "pending"
-    completed = client.get(f"/api/analyses/{response.json()['id']}")
+    completed = client.get(f"/api/results/{response.json()['id']}")
     assert completed.json()["status"] == "completed"
     assert len(completed.json()["result"]["players"]) == 3
 

@@ -24,6 +24,7 @@ from app.repositories.analysis_repository import AnalysisRepository
 from app.repositories.replay_repository import ReplayRepository
 from app.services.analysis_service import AnalysisService
 from app.models.analysis import AnalysisModel, EventAnalysisModel, PlayerAnalysisModel, RoundAnalysisModel
+from app.models.access import AnalysisSubmissionModel
 from app.models.game import CanonicalGameModel
 from app.models.replay import RawReplayModel
 
@@ -127,8 +128,12 @@ async def test_analysis_is_reused_for_same_game_algorithm_version_and_options(an
     service, algorithm, game_id = analysis_context
     first = await service.analyze(game_id, algorithm.id, {"eventDetails": True})
     second = await service.analyze(game_id, algorithm.id, {"eventDetails": True})
-    assert first.id == second.id
+    session = service.analysis_repository.session
+
+    assert first.id != second.id
     assert algorithm.calls == 1
+    assert await session.scalar(select(func.count()).select_from(AnalysisModel)) == 1
+    assert await session.scalar(select(func.count()).select_from(AnalysisSubmissionModel)) == 2
 
 
 async def test_analysis_can_be_enqueued_before_processing(analysis_context):
@@ -177,7 +182,9 @@ async def test_processing_exposes_analyzing_status_while_algorithm_runs(analysis
 
     processing = asyncio.create_task(service.process(pending.id, {"eventDetails": True}))
     await asyncio.sleep(0.02)
-    in_progress = await service.analysis_repository.get(pending.id)
+    submission = await service.submission_repository.get(pending.id)
+    assert submission is not None
+    in_progress = await service.analysis_repository.get(submission.analysis_id)
 
     assert in_progress is not None
     assert in_progress.status == "analyzing"
@@ -189,7 +196,7 @@ async def test_analyses_are_listed_newest_first_with_game_summary(analysis_conte
     first = await service.enqueue(game_id, algorithm.id, {"eventDetails": True})
     second = await service.enqueue(game_id, algorithm.id, {"eventDetails": False})
 
-    analyses = await service.list()
+    analyses = await service.list_submissions()
 
     assert [analysis.id for analysis in analyses] == [second.id, first.id]
     assert analyses[0].created_at is not None
@@ -200,8 +207,11 @@ async def test_options_are_part_of_cache_key(analysis_context):
     service, algorithm, game_id = analysis_context
     first = await service.analyze(game_id, algorithm.id, {"eventDetails": True})
     second = await service.analyze(game_id, algorithm.id, {"eventDetails": False})
+    session = service.analysis_repository.session
+
     assert first.id != second.id
     assert algorithm.calls == 2
+    assert await session.scalar(select(func.count()).select_from(AnalysisModel)) == 2
 
 
 async def test_missing_game_returns_typed_error(analysis_context):
@@ -233,6 +243,7 @@ async def test_deleting_raw_replay_cascades_through_all_analysis_layers(analysis
     for model in (
         CanonicalGameModel,
         AnalysisModel,
+        AnalysisSubmissionModel,
         PlayerAnalysisModel,
         RoundAnalysisModel,
         EventAnalysisModel,

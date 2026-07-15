@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import AliasGenerator, BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
@@ -8,6 +8,7 @@ from app.domain.analysis import AnalysisOptions
 from app.repositories.analysis_repository import AnalysisRepository
 from app.repositories.replay_repository import ReplayRepository
 from app.services.analysis_service import AnalysisEnvelope, AnalysisService
+from app.auth import require_admin
 
 
 router = APIRouter(prefix="/api", tags=["analyses"])
@@ -38,7 +39,7 @@ async def list_algorithms(request: Request) -> list[dict[str, object]]:
     ]
 
 
-async def _process_analysis(request: Request, analysis_id: UUID, options: AnalysisOptions) -> None:
+async def _process_analysis(request: Request, submission_id: UUID, options: AnalysisOptions) -> None:
     session = request.app.state.session_factory()
     try:
         service = AnalysisService(
@@ -46,7 +47,7 @@ async def _process_analysis(request: Request, analysis_id: UUID, options: Analys
             AnalysisRepository(session),
             request.app.state.algorithm_registry,
         )
-        await service.process(analysis_id, options)
+        await service.process(submission_id, options)
     except Exception:
         return
     finally:
@@ -75,7 +76,10 @@ async def create_analysis(
 
 
 @router.get("/analyses", response_model=list[AnalysisEnvelope], response_model_by_alias=True)
-async def list_analyses(request: Request) -> list[AnalysisEnvelope]:
+async def list_analyses(
+    request: Request,
+    _admin: None = Depends(require_admin),
+) -> list[AnalysisEnvelope]:
     session = request.app.state.session_factory()
     try:
         service = AnalysisService(
@@ -83,13 +87,13 @@ async def list_analyses(request: Request) -> list[AnalysisEnvelope]:
             AnalysisRepository(session),
             request.app.state.algorithm_registry,
         )
-        return await service.list()
+        return await service.list_submissions()
     finally:
         await session.close()
 
 
-@router.get("/analyses/{analysis_id}", response_model=AnalysisEnvelope, response_model_by_alias=True)
-async def get_analysis(request: Request, analysis_id: UUID) -> AnalysisEnvelope:
+@router.get("/results/{submission_id}", response_model=AnalysisEnvelope, response_model_by_alias=True)
+async def get_analysis(request: Request, submission_id: UUID) -> AnalysisEnvelope:
     session = request.app.state.session_factory()
     try:
         service = AnalysisService(
@@ -97,6 +101,6 @@ async def get_analysis(request: Request, analysis_id: UUID) -> AnalysisEnvelope:
             AnalysisRepository(session),
             request.app.state.algorithm_registry,
         )
-        return await service.get(analysis_id)
+        return await service.get(submission_id)
     finally:
         await session.close()

@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import AliasGenerator, BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
+from sqlalchemy.exc import IntegrityError
 
 from app.algorithms.registry import AlgorithmRegistry
 from app.domain.analysis import AnalysisOptions, GameLuckAnalysis
@@ -14,6 +15,8 @@ from app.errors import AppError
 from app.models.analysis import AnalysisModel
 from app.repositories.analysis_repository import AnalysisRepository
 from app.repositories.replay_repository import CanonicalGameRecord, ReplayRepository
+from app.repositories.submission_repository import SubmissionRepository
+from app.models.access import AnalysisSubmissionModel
 
 
 class AnalysisGamePlayer(BaseModel):
@@ -61,6 +64,7 @@ class AnalysisService:
     ) -> None:
         self.replay_repository = replay_repository
         self.analysis_repository = analysis_repository
+        self.submission_repository = SubmissionRepository(analysis_repository.session)
         self.algorithms = algorithms
 
     @staticmethod
@@ -86,6 +90,7 @@ class AnalysisService:
 
     async def envelope(
         self,
+        submission: AnalysisSubmissionModel,
         model: AnalysisModel,
         record: CanonicalGameRecord | None = None,
     ) -> AnalysisEnvelope:
@@ -98,21 +103,21 @@ class AnalysisService:
                 if 0 <= player.seat < len(record.game.final_scores):
                     player.actual_points = record.game.final_scores[player.seat]
         return AnalysisEnvelope(
-            id=model.id,
+            id=submission.id,
             game_id=model.game_id,
-            created_at=model.created_at,
+            created_at=submission.created_at,
             status=model.status,
             game=self._game_summary(model.game_id, record),
             result=result,
             error_code=model.error_code,
         )
 
-    async def enqueue(
+    async def _resolve_cached_analysis(
         self,
         game_id: UUID,
         algorithm_id: str,
         raw_options: AnalysisOptions | dict[str, object],
-    ) -> AnalysisEnvelope:
+    ) -> tuple[AnalysisModel, CanonicalGameRecord | None]:
         algorithm = self.algorithms.get(algorithm_id)
         options = raw_options if isinstance(raw_options, AnalysisOptions) else AnalysisOptions.model_validate(raw_options)
         options_hash = self.options_hash(options)
@@ -120,7 +125,7 @@ class AnalysisService:
             game_id, algorithm.id, algorithm.version, options_hash
         )
         if cached is not None:
-            return await self.envelope(cached)
+            return cached, None
 
         record = await self.replay_repository.get_game_record(game_id)
         if record is None:
@@ -135,19 +140,41 @@ class AnalysisService:
             options_hash=options_hash,
             status="pending",
         )
-        await self.analysis_repository.add(model)
-        return await self.envelope(model, record)
+        try:
+            await self.analysis_repository.add(model)
+        except IntegrityError:
+            await self.analysis_repository.session.rollback()
+            cached = await self.analysis_repository.find_cached(
+                game_id, algorithm.id, algorithm.version, options_hash
+            )
+            if cached is None:
+                raise
+            return cached, record
+        return model, record
+
+    async def enqueue(
+        self,
+        game_id: UUID,
+        algorithm_id: str,
+        raw_options: AnalysisOptions | dict[str, object],
+    ) -> AnalysisEnvelope:
+        model, record = await self._resolve_cached_analysis(game_id, algorithm_id, raw_options)
+        submission = await self.submission_repository.add(model.id)
+        return await self.envelope(submission, model, record)
 
     async def process(
         self,
-        analysis_id: UUID,
+        submission_id: UUID,
         raw_options: AnalysisOptions | dict[str, object],
     ) -> AnalysisEnvelope:
-        model = await self.analysis_repository.get(analysis_id)
+        submission = await self.submission_repository.get(submission_id)
+        if submission is None:
+            raise AppError("ANALYSIS_NOT_FOUND", "Analysis was not found.", status_code=404)
+        model = await self.analysis_repository.get(submission.analysis_id)
         if model is None:
             raise AppError("ANALYSIS_NOT_FOUND", "Analysis was not found.", status_code=404)
         if model.status != "pending":
-            return await self.envelope(model)
+            return await self.envelope(submission, model)
 
         algorithm = self.algorithms.get(model.algorithm_id)
         options = raw_options if isinstance(raw_options, AnalysisOptions) else AnalysisOptions.model_validate(raw_options)
@@ -173,16 +200,27 @@ class AnalysisService:
             model.error_parameters = {}
             await self.analysis_repository.save(model)
             raise
-        return await self.envelope(model, record)
+        return await self.envelope(submission, model, record)
 
-    async def get(self, analysis_id: UUID) -> AnalysisEnvelope:
-        model = await self.analysis_repository.get(analysis_id)
+    async def get(self, submission_id: UUID) -> AnalysisEnvelope:
+        submission = await self.submission_repository.get(submission_id)
+        if submission is None:
+            raise AppError("ANALYSIS_NOT_FOUND", "Analysis was not found.", status_code=404)
+        model = await self.analysis_repository.get(submission.analysis_id)
         if model is None:
             raise AppError("ANALYSIS_NOT_FOUND", "Analysis was not found.", status_code=404)
-        return await self.envelope(model)
+        return await self.envelope(submission, model)
+
+    async def list_submissions(self) -> list[AnalysisEnvelope]:
+        envelopes = []
+        for submission in await self.submission_repository.list_all():
+            model = await self.analysis_repository.get(submission.analysis_id)
+            if model is not None:
+                envelopes.append(await self.envelope(submission, model))
+        return envelopes
 
     async def list(self) -> list[AnalysisEnvelope]:
-        return [await self.envelope(model) for model in await self.analysis_repository.list_all()]
+        return await self.list_submissions()
 
     async def analyze(
         self,
