@@ -1,0 +1,24 @@
+logging {
+  level = "warn"
+}
+
+loki.source.syslog "nginx" {
+  listener {
+    address       = "127.0.0.1:1514"
+    protocol      = "udp"
+    syslog_format = "rfc3164"
+    labels = {
+      service     = "haiun",
+      environment = "production",
+      log_type    = "api_access",
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

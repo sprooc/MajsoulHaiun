@@ -76,6 +76,24 @@ assert "return 404" in text
 PY
 }
 
+check_telemetry_config() {
+  docker run --rm \
+    --volume "$root/deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+    --entrypoint /bin/promtool \
+    prom/prometheus:v3.5.0 \
+    check config /etc/prometheus/prometheus.yml
+
+  docker run --rm \
+    --volume "$root/deploy/loki/config.yml:/etc/loki/config.yml:ro" \
+    grafana/loki:3.5.1 \
+    -config.file=/etc/loki/config.yml -verify-config=true
+
+  docker run --rm \
+    --volume "$root/deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
+    grafana/alloy:v1.10.1 \
+    validate /etc/alloy/config.alloy
+}
+
 case "$mode" in
   simple)
     check_simple_config
@@ -84,13 +102,17 @@ case "$mode" in
   nginx)
     check_nginx_config
     ;;
+  telemetry)
+    check_telemetry_config
+    ;;
   all)
     check_simple_config
     smoke_simple
     check_nginx_config
+    check_telemetry_config
     ;;
   *)
-    printf 'Usage: %s [simple|nginx|all]\n' "$0" >&2
+    printf 'Usage: %s [simple|nginx|telemetry|all]\n' "$0" >&2
     exit 2
     ;;
 esac
