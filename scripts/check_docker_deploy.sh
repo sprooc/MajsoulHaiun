@@ -55,17 +55,42 @@ smoke_simple() (
     python3 -c 'import json, sys; assert json.load(sys.stdin)["status"] == "ok"'
 )
 
+check_nginx_config() {
+  docker run --rm \
+    --add-host haiun:127.0.0.1 \
+    --volume "$root/deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+    --volume "$root/deploy/nginx/conf.d:/etc/nginx/conf.d:ro" \
+    --volume "$root/deploy/nginx/trusted-proxies.default.conf:/etc/nginx/trusted-proxies.conf:ro" \
+    nginx:1.29-alpine nginx -t
+
+  python3 - <<'PY'
+from pathlib import Path
+
+text = Path("deploy/nginx/conf.d/haiun.conf").read_text(encoding="utf-8")
+assert "listen 80" in text
+assert "client_max_body_size 32m" in text
+assert "limit_req zone=haiun_api burst=20 nodelay" in text
+assert "access_log syslog:server=127.0.0.1:1514" in text
+assert "location = /metrics" in text
+assert "return 404" in text
+PY
+}
+
 case "$mode" in
   simple)
     check_simple_config
     smoke_simple
     ;;
+  nginx)
+    check_nginx_config
+    ;;
   all)
     check_simple_config
     smoke_simple
+    check_nginx_config
     ;;
   *)
-    printf 'Usage: %s [simple|all]\n' "$0" >&2
+    printf 'Usage: %s [simple|nginx|all]\n' "$0" >&2
     exit 2
     ;;
 esac
