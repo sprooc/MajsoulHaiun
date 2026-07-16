@@ -352,6 +352,388 @@ assert parse_records(provider_path, "providers") == [
 PY
 }
 
+smoke_exit_status() {
+  local original_status="$1"
+  local cleanup_status="$2"
+
+  if test "$original_status" -ne 0; then
+    return "$original_status"
+  fi
+  return "$cleanup_status"
+}
+
+check_smoke_exit_status() {
+  local actual_status
+
+  if smoke_exit_status 0 1; then
+    actual_status=0
+  else
+    actual_status="$?"
+  fi
+  test "$actual_status" = "1"
+
+  if smoke_exit_status 7 1; then
+    actual_status=0
+  else
+    actual_status="$?"
+  fi
+  test "$actual_status" = "7"
+}
+
+check_production_config() {
+  check_smoke_exit_status
+  docker build \
+    --build-arg PYPI_INDEX_URL="${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}" \
+    --tag haiun-check:app .
+  # shellcheck disable=SC2016  # Python checks literal Compose shell variables.
+  HAIUN_IMAGE=haiun-check:app \
+  HAIUN_DATA_VOLUME=haiun-check-data \
+  HAIUN_CONFIG_DIR="$root/config" \
+  HAIUN_TRUSTED_PROXIES_FILE="$root/deploy/nginx/trusted-proxies.default.conf" \
+  HAIUN_LOKI_VOLUME=haiun-check-loki \
+  HAIUN_PROMETHEUS_VOLUME=haiun-check-prometheus \
+  HAIUN_GRAFANA_VOLUME=haiun-check-grafana \
+  HAIUN_EDGE_NETWORK=haiun-check-edge \
+  HAIUN_MONITORING_NETWORK=haiun-check-monitoring \
+  GRAFANA_ADMIN_PASSWORD_FILE=/dev/null \
+    docker compose -f compose.production.yml config --format json |
+    python3 -c '
+import json, os, sys
+config = json.load(sys.stdin)
+services = config["services"]
+
+nginx_ports = services["nginx"]["ports"]
+assert len(nginx_ports) == 1
+assert nginx_ports[0]["published"] == "80"
+assert nginx_ports[0]["target"] == 80
+
+grafana_ports = services["grafana"]["ports"]
+assert len(grafana_ports) == 1
+assert grafana_ports[0]["host_ip"] == "127.0.0.1"
+assert grafana_ports[0]["published"] == "3000"
+assert grafana_ports[0]["target"] == 3000
+
+for private_service in ("haiun", "prometheus", "loki", "alloy"):
+    assert not services[private_service].get("ports")
+
+expected_limits = {
+    "haiun": 768 * 1024 * 1024,
+    "grafana": 192 * 1024 * 1024,
+    "loki": 192 * 1024 * 1024,
+    "prometheus": 192 * 1024 * 1024,
+    "alloy": 96 * 1024 * 1024,
+    "nginx": 64 * 1024 * 1024,
+}
+for service, expected in expected_limits.items():
+    assert int(services[service]["mem_limit"]) == expected
+
+assert services["alloy"]["network_mode"] == "service:nginx"
+assert services["haiun"]["environment"]["HAIUN_METRICS_ENABLED"] == "true"
+assert services["grafana"]["environment"]["GF_SECURITY_ADMIN_PASSWORD__FILE"] == "/run/secrets/grafana_admin_password"
+assert set(services["grafana"]["networks"]) == {"edge", "monitoring"}
+grafana_entrypoint = " ".join(services["grafana"]["entrypoint"])
+assert services["grafana"]["user"] == "0"
+assert services["grafana"]["tmpfs"] == [
+    "/run/haiun-secrets:mode=0750,uid=0,gid=0,noexec,nosuid,nodev"
+]
+assert "cp -- \"$${GF_SECURITY_ADMIN_PASSWORD__FILE}\" \"$${secret_copy}\"" in grafana_entrypoint
+assert "chown 472:0 \"$${secret_copy}\"" in grafana_entrypoint
+assert "chmod 0400 \"$${secret_copy}\"" in grafana_entrypoint
+assert "GF_SECURITY_ADMIN_PASSWORD__FILE=\"$${secret_copy}\"" in grafana_entrypoint
+assert (
+    "su -s /bin/bash grafana -c " + chr(39) + "exec /run.sh" + chr(39)
+) in grafana_entrypoint
+assert services["grafana"]["secrets"] == [
+    {
+        "source": "grafana_admin_password",
+        "target": "/run/secrets/grafana_admin_password",
+    }
+]
+assert config["secrets"]["grafana_admin_password"]["file"] == "/dev/null"
+assert services["haiun"]["build"]["args"]["PYPI_INDEX_URL"] == os.environ.get(
+    "HAIUN_PYPI_INDEX_URL", "https://pypi.org/simple"
+)
+prometheus_command = " ".join(services["prometheus"]["command"])
+assert "--storage.tsdb.retention.time=30d" in prometheus_command
+assert "--storage.tsdb.retention.size=512MB" in prometheus_command
+
+assert not services["haiun"].get("depends_on")
+assert services["nginx"]["depends_on"] == {
+    "haiun": {"condition": "service_healthy", "required": True}
+}
+'
+}
+
+query_monitoring_service() {
+  local network="$1"
+  shift
+  docker run --rm --network "$network" curlimages/curl:8.14.1 "$@"
+}
+
+assert_host_port_available() {
+  local port="$1"
+  local docker_owners
+  local listeners
+
+  listeners=""
+  if command -v ss >/dev/null 2>&1; then
+    listeners="$(ss -H -ltnp "sport = :$port" 2>/dev/null || true)"
+  fi
+  docker_owners="$(
+    docker ps --filter "publish=$port" \
+      --format 'container={{.ID}} name={{.Names}} ports={{.Ports}}'
+  )"
+
+  if test -n "$listeners" || test -n "$docker_owners"; then
+    printf 'Port %s is already in use; production smoke test cannot start.\n' "$port" >&2
+    if test -n "$listeners"; then
+      printf 'Socket state: %s\n' "$listeners" >&2
+    fi
+    if test -n "$docker_owners"; then
+      printf 'Docker owner: %s\n' "$docker_owners" >&2
+    fi
+    return 1
+  fi
+}
+
+smoke_production() (
+  set -euo pipefail
+  umask 077
+
+  assert_host_port_available 80
+  assert_host_port_available 3000
+
+  project="haiun-check-production-$$"
+  temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/haiun-check-production.XXXXXX")"
+  config_dir="$temp_dir/config"
+  secret_file="$temp_dir/grafana_admin_password.txt"
+  grafana_password="haiun-check-grafana-password"
+  secret_owner="$(id -u)"
+  edge_network="${project}-edge"
+  monitoring_network="${project}-monitoring"
+  mkdir -p "$config_dir"
+  printf '%s\n' "$grafana_password" >"$secret_file"
+  chmod 600 "$secret_file"
+  test "$(stat -c '%u:%a' "$secret_file")" = "${secret_owner}:600"
+
+  export HAIUN_IMAGE=haiun-check:app
+  export HAIUN_DATA_VOLUME="${project}-data"
+  export HAIUN_CONFIG_DIR="$config_dir"
+  export HAIUN_TRUSTED_PROXIES_FILE="$root/deploy/nginx/trusted-proxies.default.conf"
+  export HAIUN_LOKI_VOLUME="${project}-loki"
+  export HAIUN_PROMETHEUS_VOLUME="${project}-prometheus"
+  export HAIUN_GRAFANA_VOLUME="${project}-grafana"
+  export HAIUN_EDGE_NETWORK="$edge_network"
+  export HAIUN_MONITORING_NETWORK="$monitoring_network"
+  export GRAFANA_ADMIN_PASSWORD_FILE="$secret_file"
+
+  # shellcheck disable=SC2329  # Invoked by the EXIT trap handler.
+  cleanup() {
+    local artifact
+    local cleanup_failed=0
+
+    if ! docker compose -p "$project" -f compose.production.yml \
+      down -v --remove-orphans >/dev/null 2>&1; then
+      printf 'Failed to stop the isolated production stack.\n' >&2
+      cleanup_failed=1
+    fi
+
+    if docker ps -a --filter "label=com.docker.compose.project=$project" \
+      --format '{{.ID}}' | grep -q .; then
+      printf 'Isolated production containers remain after cleanup.\n' >&2
+      cleanup_failed=1
+    fi
+    for artifact in "$edge_network" "$monitoring_network"; do
+      if docker network inspect "$artifact" >/dev/null 2>&1; then
+        printf 'Isolated network remains after cleanup: %s\n' "$artifact" >&2
+        cleanup_failed=1
+      fi
+    done
+    for artifact in \
+      "$HAIUN_DATA_VOLUME" \
+      "$HAIUN_LOKI_VOLUME" \
+      "$HAIUN_PROMETHEUS_VOLUME" \
+      "$HAIUN_GRAFANA_VOLUME"; do
+      if docker volume inspect "$artifact" >/dev/null 2>&1; then
+        printf 'Isolated volume remains after cleanup: %s\n' "$artifact" >&2
+        cleanup_failed=1
+      fi
+    done
+
+    rm -rf "$temp_dir"
+    if test -e "$temp_dir" || test -e "$config_dir" || test -e "$secret_file"; then
+      printf 'Temporary production files remain after cleanup: %s\n' "$temp_dir" >&2
+      cleanup_failed=1
+    fi
+
+    return "$cleanup_failed"
+  }
+
+  # shellcheck disable=SC2329  # Invoked indirectly by the EXIT trap.
+  exit_smoke() {
+    local original_status="$?"
+    local cleanup_status=0
+    local final_status
+
+    trap - EXIT
+    if test "$original_status" -ne 0; then
+      docker compose -p "$project" -f compose.production.yml ps --all >&2 || true
+      docker compose -p "$project" -f compose.production.yml \
+        logs --no-color --tail=200 2>&1 |
+        sed "s/${grafana_password}/[REDACTED]/g" >&2 || true
+    fi
+    cleanup || cleanup_status="$?"
+    if smoke_exit_status "$original_status" "$cleanup_status"; then
+      final_status=0
+    else
+      final_status="$?"
+    fi
+    exit "$final_status"
+  }
+  trap exit_smoke EXIT
+
+  docker compose -p "$project" -f compose.production.yml up -d --no-build
+
+  assert_memory() {
+    local service="$1"
+    local expected="$2"
+    local container_id
+    local actual
+    container_id="$(docker compose -p "$project" -f compose.production.yml ps -q "$service")"
+    actual="$(docker inspect --format '{{.HostConfig.Memory}}' "$container_id")"
+    test "$actual" = "$expected"
+  }
+
+  assert_memory haiun 805306368
+  assert_memory grafana 201326592
+  assert_memory loki 201326592
+  assert_memory prometheus 201326592
+  assert_memory alloy 100663296
+  assert_memory nginx 67108864
+
+  nginx_id="$(docker compose -p "$project" -f compose.production.yml ps -q nginx)"
+  grafana_id="$(docker compose -p "$project" -f compose.production.yml ps -q grafana)"
+  test "$(docker exec "$grafana_id" sh -c \
+    "awk '/^Uid:/ {print \$2}' /proc/1/status")" = "472"
+  test "$(docker exec "$grafana_id" stat -c '%u:%g:%a' \
+    /run/haiun-secrets/grafana_admin_password)" = "472:0:400"
+  test "$(stat -c '%u:%a' "$secret_file")" = "${secret_owner}:600"
+  if docker inspect --format '{{json .Config.Env}} {{json .Path}} {{json .Args}}' \
+    "$grafana_id" | rg -F -q "$grafana_password"; then
+    printf 'Grafana password reached configured environment or argv.\n' >&2
+    exit 1
+  fi
+  if docker logs "$grafana_id" 2>&1 | rg -F -q "$grafana_password"; then
+    printf 'Grafana password reached container logs.\n' >&2
+    exit 1
+  fi
+  docker inspect --format '{{json .HostConfig.PortBindings}}' "$nginx_id" |
+    rg -q '"HostIp":"","HostPort":"80"'
+  docker inspect --format '{{json .HostConfig.PortBindings}}' "$grafana_id" |
+    rg -q '"HostIp":"127.0.0.1","HostPort":"3000"'
+  for private_service in haiun alloy loki prometheus; do
+    container_id="$(docker compose -p "$project" -f compose.production.yml ps -q "$private_service")"
+    if docker inspect --format '{{json .HostConfig.PortBindings}}' "$container_id" |
+      rg -q 'HostPort'; then
+      printf '%s unexpectedly publishes a host port.\n' "$private_service" >&2
+      exit 1
+    fi
+  done
+
+  curl --fail --silent --show-error --retry 60 --retry-delay 1 --retry-connrefused \
+    --retry-all-errors \
+    http://127.0.0.1/api/health |
+    python3 -c 'import json, sys; assert json.load(sys.stdin)["status"] == "ok"'
+
+  test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    http://127.0.0.1/metrics)" = "404"
+
+  curl --fail --silent --show-error \
+    -H 'X-Forwarded-For: 203.0.113.42' \
+    -H 'X-Forwarded-Proto: https' \
+    -H 'Referer: https://example.com/private/path?oauth_token=must-not-log' \
+    -H 'User-Agent: HaiunDeploymentCheck/1.0' \
+    'http://127.0.0.1/api/health?oauth_token=must-not-log' >/dev/null
+
+  prometheus_ready=0
+  for _ in $(seq 1 60); do
+    if query_monitoring_service "$monitoring_network" --fail --silent --get \
+      --data-urlencode 'query=up{job=~"haiun|prometheus|loki|alloy"}' \
+      http://prometheus:9090/api/v1/query |
+      python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+assert payload["status"] == "success"
+results = {
+    item["metric"]["job"]: item["value"][1]
+    for item in payload["data"]["result"]
+}
+assert results == {
+    "haiun": "1",
+    "prometheus": "1",
+    "loki": "1",
+    "alloy": "1",
+}
+'; then
+      prometheus_ready=1
+      break
+    fi
+    sleep 1
+  done
+  test "$prometheus_ready" = "1"
+
+  loki_ready=0
+  for _ in $(seq 1 30); do
+    response="$(query_monitoring_service "$monitoring_network" --fail --silent --get \
+      --data-urlencode 'query={service="haiun", log_type="api_access"}' \
+      --data-urlencode 'limit=100' \
+      http://loki:3100/loki/api/v1/query_range || true)"
+    if printf '%s' "$response" | rg -q '203\.0\.113\.42'; then
+      printf '%s' "$response" | rg -q 'example\.com'
+      if printf '%s' "$response" | rg -q 'must-not-log|private/path'; then
+        printf 'Forbidden query or referrer detail reached Loki.\n' >&2
+        exit 1
+      fi
+      loki_ready=1
+      break
+    fi
+    sleep 1
+  done
+  test "$loki_ready" = "1"
+
+  curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-connrefused \
+    --retry-all-errors \
+    http://127.0.0.1:3000/api/health |
+    python3 -c 'import json, sys; assert json.load(sys.stdin)["database"] == "ok"'
+
+  dashboards_ready=0
+  for _ in $(seq 1 30); do
+    if curl --fail --silent --show-error \
+      --user "admin:${grafana_password}" \
+      'http://127.0.0.1:3000/api/search?query=Haiun' |
+      python3 -c '
+import json, sys
+titles = {item["title"] for item in json.load(sys.stdin)}
+assert {
+    "Haiun API Overview",
+    "Haiun Access Sources",
+    "Haiun Backend Runtime",
+}.issubset(titles)
+'; then
+      dashboards_ready=1
+      break
+    fi
+    sleep 1
+  done
+  test "$dashboards_ready" = "1"
+
+  test "$(stat -c '%u:%a' "$secret_file")" = "${secret_owner}:600"
+  if docker logs "$grafana_id" 2>&1 | rg -F -q "$grafana_password"; then
+    printf 'Grafana password reached container logs.\n' >&2
+    exit 1
+  fi
+)
+
 case "$mode" in
   simple)
     check_simple_config
@@ -366,15 +748,21 @@ case "$mode" in
   grafana)
     check_grafana_config
     ;;
+  production)
+    check_production_config
+    smoke_production
+    ;;
   all)
     check_simple_config
     smoke_simple
     check_nginx_config
     check_telemetry_config
     check_grafana_config
+    check_production_config
+    smoke_production
     ;;
   *)
-    printf 'Usage: %s [simple|nginx|telemetry|grafana|all]\n' "$0" >&2
+    printf 'Usage: %s [simple|nginx|telemetry|grafana|production|all]\n' "$0" >&2
     exit 2
     ;;
 esac

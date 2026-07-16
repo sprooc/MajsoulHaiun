@@ -1,0 +1,245 @@
+services:
+  haiun:
+    image: ${HAIUN_IMAGE:-haiun:local}
+    build:
+      context: .
+      target: runtime
+      args:
+        PYPI_INDEX_URL: ${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}
+    command:
+      - python
+      - -m
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --workers
+      - "1"
+      - --proxy-headers
+      - --forwarded-allow-ips=*
+    environment:
+      HAIUN_CONFIG: /app/config/config.toml
+      HAIUN_DATA_DIR: /data
+      HAIUN_METRICS_ENABLED: "true"
+    volumes:
+      - type: volume
+        source: haiun-data
+        target: /data
+      - type: bind
+        source: ${HAIUN_CONFIG_DIR:-./config}
+        target: /app/config
+        read_only: true
+    networks:
+      - edge
+    mem_limit: 768m
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3).read()
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  nginx:
+    image: nginx:1.29-alpine
+    depends_on:
+      haiun:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - type: bind
+        source: ./deploy/nginx/nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+      - type: bind
+        source: ./deploy/nginx/conf.d
+        target: /etc/nginx/conf.d
+        read_only: true
+      - type: bind
+        source: ${HAIUN_TRUSTED_PROXIES_FILE:-./deploy/nginx/trusted-proxies.default.conf}
+        target: /etc/nginx/trusted-proxies.conf
+        read_only: true
+    networks:
+      - edge
+      - monitoring
+    mem_limit: 64m
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1/api/health >/dev/null 2>&1 || exit 1
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  alloy:
+    image: grafana/alloy:v1.10.1
+    network_mode: service:nginx
+    depends_on:
+      nginx:
+        condition: service_started
+      loki:
+        condition: service_healthy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - type: bind
+        source: ./deploy/alloy/config.alloy
+        target: /etc/alloy/config.alloy
+        read_only: true
+    mem_limit: 96m
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1:12345/-/ready >/dev/null 2>&1 || exit 1
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  loki:
+    image: grafana/loki:3.5.1
+    command:
+      - -config.file=/etc/loki/config.yml
+    volumes:
+      - type: bind
+        source: ./deploy/loki/config.yml
+        target: /etc/loki/config.yml
+        read_only: true
+      - type: volume
+        source: loki-data
+        target: /loki
+    networks:
+      - monitoring
+    mem_limit: 192m
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1:3100/ready >/dev/null 2>&1 || exit 1
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    depends_on:
+      haiun:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=512MB
+      - --web.enable-lifecycle
+    volumes:
+      - type: bind
+        source: ./deploy/prometheus/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+      - type: volume
+        source: prometheus-data
+        target: /prometheus
+    networks:
+      - edge
+      - monitoring
+    mem_limit: 192m
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1:9090/-/ready >/dev/null 2>&1 || exit 1
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    user: "0"
+    entrypoint:
+      - /bin/bash
+      - -euc
+      - |
+        secret_copy=/run/haiun-secrets/grafana_admin_password
+        cp -- "$${GF_SECURITY_ADMIN_PASSWORD__FILE}" "$${secret_copy}"
+        chown 472:0 "$${secret_copy}"
+        chmod 0400 "$${secret_copy}"
+        export GF_SECURITY_ADMIN_PASSWORD__FILE="$${secret_copy}"
+        exec su -s /bin/bash grafana -c 'exec /run.sh'
+    depends_on:
+      loki:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    secrets:
+      - grafana_admin_password
+    tmpfs:
+      - /run/haiun-secrets:mode=0750,uid=0,gid=0,noexec,nosuid,nodev
+    volumes:
+      - type: volume
+        source: grafana-data
+        target: /var/lib/grafana
+      - type: bind
+        source: ./deploy/grafana/provisioning
+        target: /etc/grafana/provisioning
+        read_only: true
+      - type: bind
+        source: ./deploy/grafana/dashboards
+        target: /var/lib/grafana/dashboards
+        read_only: true
+    networks:
+      - edge
+      - monitoring
+    mem_limit: 192m
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+secrets:
+  grafana_admin_password:
+    file: ${GRAFANA_ADMIN_PASSWORD_FILE:-./secrets/grafana_admin_password.txt}
+
+volumes:
+  haiun-data:
+    name: ${HAIUN_DATA_VOLUME:-haiun-data}
+  loki-data:
+    name: ${HAIUN_LOKI_VOLUME:-haiun-loki}
+  prometheus-data:
+    name: ${HAIUN_PROMETHEUS_VOLUME:-haiun-prometheus}
+  grafana-data:
+    name: ${HAIUN_GRAFANA_VOLUME:-haiun-grafana}
+
+networks:
+  edge:
+    name: ${HAIUN_EDGE_NETWORK:-haiun-edge}
+  monitoring:
+    name: ${HAIUN_MONITORING_NETWORK:-haiun-monitoring}
+    internal: true

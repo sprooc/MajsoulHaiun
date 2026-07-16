@@ -16,3 +16,4 @@ data/
 .direnv/
 result
 /config/config.toml
+/secrets/
