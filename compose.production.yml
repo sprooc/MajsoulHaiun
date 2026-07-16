@@ -4,15 +4,19 @@ services:
     build:
       context: .
       target: runtime
+      network: ${HAIUN_BUILD_NETWORK:-default}
       args:
-        PYPI_INDEX_URL: ${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}
+        PYPI_INDEX_URL: "${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}"
+        HTTP_PROXY: "${HAIUN_HTTP_PROXY:-}"
+        HTTPS_PROXY: "${HAIUN_HTTPS_PROXY:-}"
+        NO_PROXY: "${HAIUN_NO_PROXY:-localhost,127.0.0.1}"
     user: "0:0"
     entrypoint:
-      - python
-      - -m
-      - app.docker_entrypoint
+      - /usr/local/bin/python
+      - -I
+      - /app/backend/app/docker_entrypoint.py
     command:
-      - python
+      - /app/.venv/bin/python
       - -m
       - uvicorn
       - app.main:app
@@ -45,7 +49,8 @@ services:
     healthcheck:
       test:
         - CMD
-        - python
+        - /usr/local/bin/python
+        - -I
         - -c
         - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3).read()
       interval: 30s
@@ -176,18 +181,6 @@ services:
 
   grafana:
     image: grafana/grafana:12.1.0
-    user: "0"
-    entrypoint:
-      - /bin/bash
-      - -euc
-      - |
-        secret_copy=/run/haiun-secrets/grafana_admin_password
-        cp -- "$${GF_SECURITY_ADMIN_PASSWORD__FILE}" "$${secret_copy}"
-        chown 472:0 "$${secret_copy}"
-        chmod 0400 "$${secret_copy}"
-        export GF_SECURITY_ADMIN_PASSWORD="\$$__file{$${secret_copy}}"
-        unset GF_SECURITY_ADMIN_PASSWORD__FILE
-        exec su -s /bin/bash grafana -c 'exec /run.sh'
     depends_on:
       loki:
         condition: service_healthy
@@ -197,14 +190,10 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}"
       GF_USERS_ALLOW_SIGN_UP: "false"
     ports:
       - "127.0.0.1:3000:3000"
-    secrets:
-      - grafana_admin_password
-    tmpfs:
-      - /run/haiun-secrets:mode=0750,uid=0,gid=0,noexec,nosuid,nodev
     volumes:
       - type: volume
         source: grafana-data
@@ -230,10 +219,6 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
-
-secrets:
-  grafana_admin_password:
-    file: ${GRAFANA_ADMIN_PASSWORD_FILE:-./secrets/grafana_admin_password.txt}
 
 volumes:
   haiun-data:

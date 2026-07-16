@@ -4,15 +4,19 @@ services:
     build:
       context: .
       target: runtime
+      network: ${HAIUN_BUILD_NETWORK:-default}
       args:
         PYPI_INDEX_URL: "${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}"
+        HTTP_PROXY: "${HAIUN_HTTP_PROXY:-}"
+        HTTPS_PROXY: "${HAIUN_HTTPS_PROXY:-}"
+        NO_PROXY: "${HAIUN_NO_PROXY:-localhost,127.0.0.1}"
     user: "0:0"
     entrypoint:
-      - python
-      - -m
-      - app.docker_entrypoint
+      - /usr/local/bin/python
+      - -I
+      - /app/backend/app/docker_entrypoint.py
     command:
-      - python
+      - /app/.venv/bin/python
       - -m
       - uvicorn
       - app.main:app
@@ -42,7 +46,8 @@ services:
     healthcheck:
       test:
         - CMD
-        - python
+        - /usr/local/bin/python
+        - -I
         - -c
         - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3).read()
       interval: 30s
