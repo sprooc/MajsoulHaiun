@@ -100,46 +100,249 @@ import json
 from pathlib import Path
 
 dashboard_dir = Path("deploy/grafana/dashboards")
-expected = {
-    "haiun-api-overview.json": ("haiun-api-overview", "Haiun API Overview"),
-    "haiun-access-sources.json": ("haiun-access-sources", "Haiun Access Sources"),
-    "haiun-backend-runtime.json": ("haiun-backend-runtime", "Haiun Backend Runtime"),
+expected_dashboards = {
+    "haiun-api-overview.json": {
+        "uid": "haiun-api-overview",
+        "title": "Haiun API Overview",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "panels": {
+            "Requests per second": [
+                "sum(rate(haiun_http_requests_total[5m]))",
+            ],
+            "Server error rate": [
+                '(sum(increase(haiun_http_requests_total{status=~"5.."}[5m])) '
+                "or vector(0)) / clamp_min((sum(increase("
+                "haiun_http_requests_total[5m])) or vector(0)), 1)",
+            ],
+            "API latency": [
+                "histogram_quantile(0.50, sum by (le) (rate("
+                "haiun_http_request_duration_seconds_bucket[5m])))",
+                "histogram_quantile(0.95, sum by (le) (rate("
+                "haiun_http_request_duration_seconds_bucket[5m])))",
+                "histogram_quantile(0.99, sum by (le) (rate("
+                "haiun_http_request_duration_seconds_bucket[5m])))",
+            ],
+            "Requests in progress": [
+                "sum(haiun_http_requests_in_progress)",
+            ],
+            "Busiest normalized routes": [
+                "topk(10, sum by (method, route) (rate("
+                "haiun_http_requests_total[5m])))",
+            ],
+        },
+    },
+    "haiun-access-sources.json": {
+        "uid": "haiun-access-sources",
+        "title": "Haiun Access Sources",
+        "datasource": {"type": "loki", "uid": "loki"},
+        "panels": {
+            "Top client IPs": [
+                "topk(10, sum by (client_ip) (count_over_time("
+                '{service="haiun", log_type="api_access"} | json | '
+                '__error__="" [5m])))',
+            ],
+            "Top referrer hosts": [
+                "topk(10, sum by (referrer_host) (count_over_time("
+                '{service="haiun", log_type="api_access"} | json | '
+                '__error__="" | referrer_host != "" [5m])))',
+            ],
+            "Top user-agents": [
+                "topk(10, sum by (user_agent) (count_over_time("
+                '{service="haiun", log_type="api_access"} | json | '
+                '__error__="" [5m])))',
+            ],
+            "Recent API requests": [
+                '{service="haiun", log_type="api_access"} | json',
+            ],
+            "Slow or failed requests": [
+                '{service="haiun", log_type="api_access"} | json | '
+                '__error__="" | request_time > 1',
+                '{service="haiun", log_type="api_access"} | json | '
+                '__error__="" | status >= 500',
+            ],
+        },
+    },
+    "haiun-backend-runtime.json": {
+        "uid": "haiun-backend-runtime",
+        "title": "Haiun Backend Runtime",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "panels": {
+            "Python process CPU": [
+                'rate(process_cpu_seconds_total{job="haiun"}[5m])',
+            ],
+            "Python process memory": [
+                'process_resident_memory_bytes{job="haiun"}',
+            ],
+            "Garbage collections": [
+                "sum by (generation) (rate("
+                'python_gc_collections_total{job="haiun"}[5m]))',
+            ],
+            "Process uptime": [
+                'time() - process_start_time_seconds{job="haiun"}',
+            ],
+            "Haiun scrape health": [
+                'up{job="haiun"}',
+            ],
+            "Monitoring service scrape health": [
+                'up{job=~"prometheus|loki|alloy"}',
+            ],
+        },
+    },
 }
-for filename, (uid, title) in expected.items():
+
+actual_files = {path.name for path in dashboard_dir.glob("*.json")}
+assert actual_files == set(expected_dashboards), actual_files
+
+for filename, expected in expected_dashboards.items():
     dashboard = json.loads((dashboard_dir / filename).read_text(encoding="utf-8"))
-    assert dashboard["uid"] == uid
-    assert dashboard["title"] == title
+    assert dashboard["uid"] == expected["uid"]
+    assert dashboard["title"] == expected["title"]
     assert dashboard["refresh"] == "30s"
     assert dashboard["panels"]
 
-all_text = "\n".join(
-    path.read_text(encoding="utf-8")
-    for path in sorted(dashboard_dir.glob("*.json"))
-)
-for required in (
-    "haiun_http_requests_total",
-    "haiun_http_request_duration_seconds_bucket",
-    "process_resident_memory_bytes",
-    'service=\\"haiun\\"',
-    'log_type=\\"api_access\\"',
-):
-    assert required in all_text
+    panel_ids = [panel["id"] for panel in dashboard["panels"]]
+    assert all(isinstance(panel_id, int) and panel_id > 0 for panel_id in panel_ids), (
+        filename,
+        panel_ids,
+    )
+    assert len(panel_ids) == len(set(panel_ids)), (filename, panel_ids)
 
-for forbidden in ("oauth_token", "haiun_admin_session", "request_body", "authorization"):
-    assert forbidden not in all_text.lower()
+    panel_titles = [panel["title"] for panel in dashboard["panels"]]
+    assert len(panel_titles) == len(set(panel_titles)), (filename, panel_titles)
+    assert set(panel_titles) == set(expected["panels"]), (filename, panel_titles)
 
-datasources = Path(
-    "deploy/grafana/provisioning/datasources/haiun.yml"
-).read_text(encoding="utf-8")
-assert "uid: prometheus" in datasources
-assert "url: http://prometheus:9090" in datasources
-assert "uid: loki" in datasources
-assert "url: http://loki:3100" in datasources
+    for panel in dashboard["panels"]:
+        assert panel["datasource"] == expected["datasource"], (
+            filename,
+            panel["title"],
+            panel["datasource"],
+        )
+        expressions = [target["expr"] for target in panel["targets"]]
+        assert expressions == expected["panels"][panel["title"]], (
+            filename,
+            panel["title"],
+            expressions,
+        )
 
-providers = Path(
-    "deploy/grafana/provisioning/dashboards/haiun.yml"
-).read_text(encoding="utf-8")
-assert "path: /var/lib/grafana/dashboards" in providers
+    if filename == "haiun-api-overview.json":
+        error_panel = next(
+            panel
+            for panel in dashboard["panels"]
+            if panel["title"] == "Server error rate"
+        )
+        assert error_panel["fieldConfig"]["defaults"]["unit"] == "percentunit"
+
+    dashboard_text = json.dumps(dashboard).lower()
+    for forbidden in (
+        "oauth_token",
+        "haiun_admin_session",
+        "request_body",
+        "authorization",
+    ):
+        assert forbidden not in dashboard_text, (filename, forbidden)
+
+
+def parse_scalar(value):
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    if value.isdigit():
+        return int(value)
+    return value
+
+
+def parse_root_scalar(path, key):
+    prefix = f"{key}:"
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith(prefix):
+            return parse_scalar(line.partition(":")[2].strip())
+    raise AssertionError(f"missing {key} in {path}")
+
+
+def parse_records(path, section):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = lines.index(f"{section}:") + 1
+    records = []
+    current = None
+    nested_key = None
+
+    for line in lines[start:]:
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            break
+        content = line.strip()
+
+        if indent == 2 and content.startswith("- "):
+            current = {}
+            records.append(current)
+            nested_key = None
+            content = content[2:]
+        elif current is None:
+            raise AssertionError(f"invalid {section} record in {path}: {line}")
+
+        key, separator, value = content.partition(":")
+        assert separator, (path, section, line)
+        value = value.strip()
+
+        if indent in (2, 4):
+            if value:
+                current[key] = parse_scalar(value)
+                nested_key = None
+            else:
+                current[key] = {}
+                nested_key = key
+        elif indent == 6 and nested_key is not None:
+            current[nested_key][key] = parse_scalar(value)
+        else:
+            raise AssertionError(f"unsupported {section} structure in {path}: {line}")
+
+    return records
+
+datasource_path = Path("deploy/grafana/provisioning/datasources/haiun.yml")
+assert parse_root_scalar(datasource_path, "apiVersion") == 1
+assert parse_records(datasource_path, "deleteDatasources") == [
+    {"name": "Prometheus", "orgId": 1},
+    {"name": "Loki", "orgId": 1},
+]
+datasources = parse_records(datasource_path, "datasources")
+assert datasources == [
+    {
+        "name": "Prometheus",
+        "uid": "prometheus",
+        "type": "prometheus",
+        "access": "proxy",
+        "url": "http://prometheus:9090",
+        "isDefault": True,
+        "editable": False,
+        "jsonData": {"timeInterval": "30s"},
+    },
+    {
+        "name": "Loki",
+        "uid": "loki",
+        "type": "loki",
+        "access": "proxy",
+        "url": "http://loki:3100",
+        "editable": False,
+    },
+]
+
+provider_path = Path("deploy/grafana/provisioning/dashboards/haiun.yml")
+assert parse_root_scalar(provider_path, "apiVersion") == 1
+assert parse_records(provider_path, "providers") == [
+    {
+        "name": "Haiun",
+        "orgId": 1,
+        "folder": "Haiun",
+        "type": "file",
+        "disableDeletion": True,
+        "allowUiUpdates": False,
+        "updateIntervalSeconds": 30,
+        "options": {"path": "/var/lib/grafana/dashboards"},
+    },
+]
 PY
 }
 

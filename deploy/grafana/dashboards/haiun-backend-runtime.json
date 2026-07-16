@@ -9,7 +9,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
       "id": 1,
       "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}},
-      "targets": [{"expr": "rate(process_cpu_seconds_total[5m])", "legendFormat": "CPU", "refId": "A"}],
+      "targets": [{"expr": "rate(process_cpu_seconds_total{job=\"haiun\"}[5m])", "legendFormat": "CPU", "refId": "A"}],
       "title": "Python process CPU",
       "type": "timeseries"
     },
@@ -19,7 +19,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
       "id": 2,
       "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}},
-      "targets": [{"expr": "process_resident_memory_bytes", "legendFormat": "resident memory", "refId": "A"}],
+      "targets": [{"expr": "process_resident_memory_bytes{job=\"haiun\"}", "legendFormat": "resident memory", "refId": "A"}],
       "title": "Python process memory",
       "type": "timeseries"
     },
@@ -29,7 +29,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "id": 3,
       "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "sum by (generation) (rate(python_gc_collections_total[5m]))", "legendFormat": "generation {{generation}}", "refId": "A"}],
+      "targets": [{"expr": "sum by (generation) (rate(python_gc_collections_total{job=\"haiun\"}[5m]))", "legendFormat": "generation {{generation}}", "refId": "A"}],
       "title": "Garbage collections",
       "type": "timeseries"
     },
@@ -39,7 +39,7 @@
       "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
       "id": 4,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
-      "targets": [{"expr": "time() - process_start_time_seconds", "refId": "A"}],
+      "targets": [{"expr": "time() - process_start_time_seconds{job=\"haiun\"}", "refId": "A"}],
       "title": "Process uptime",
       "type": "stat"
     },
