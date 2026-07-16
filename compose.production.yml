@@ -6,6 +6,11 @@ services:
       target: runtime
       args:
         PYPI_INDEX_URL: ${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}
+    user: "0:0"
+    entrypoint:
+      - python
+      - -m
+      - app.docker_entrypoint
     command:
       - python
       - -m
@@ -31,6 +36,8 @@ services:
         source: ${HAIUN_CONFIG_DIR:-./config}
         target: /app/config
         read_only: true
+    tmpfs:
+      - /run/haiun-config:mode=0711,uid=0,gid=0,noexec,nosuid,nodev
     networks:
       - edge
     mem_limit: 768m

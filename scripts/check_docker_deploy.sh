@@ -6,10 +6,73 @@ cd "$root"
 
 mode="${1:-all}"
 
+assert_image_runtime_contract() {
+  test "$(docker image inspect --format '{{.Config.User}}' haiun-check:app)" = "haiun"
+  test "$(docker run --rm --entrypoint python haiun-check:app -c \
+    'import os; print(os.geteuid())')" = "10001"
+}
+
+write_synthetic_haiun_config() {
+  local destination="$1"
+  local session_hours="$2"
+
+  python3 - "$destination" "$session_hours" <<'PY'
+import secrets
+import sys
+from pathlib import Path
+
+destination = Path(sys.argv[1])
+session_hours = int(sys.argv[2])
+password = secrets.token_urlsafe(32)
+destination.write_text(
+    f'[admin]\npassword = "{password}"\nsession_hours = {session_hours}\n',
+    encoding="utf-8",
+)
+destination.chmod(0o600)
+PY
+}
+
+assert_haiun_config_runtime() {
+  local container_id="$1"
+  local source_file="$2"
+  local session_hours="$3"
+  local source_owner="$4"
+  local pid_uid
+  local pid_groups
+
+  pid_uid="$(docker exec "$container_id" sh -c \
+    "awk '/^Uid:/ {print \$2}' /proc/1/status")"
+  pid_groups="$(docker exec "$container_id" sh -c \
+    "awk '/^Groups:/ {sub(/^Groups:[[:space:]]*/, \"\"); print}' /proc/1/status")"
+  test "$pid_uid" = "10001"
+  test -z "$pid_groups"
+  test "$(docker exec "$container_id" stat -c '%u:%g:%a' /run/haiun-config)" = \
+    "0:0:711"
+  test "$(docker exec "$container_id" stat -c '%u:%g:%a' \
+    /run/haiun-config/config.toml)" = "10001:10001:400"
+  if docker exec --user 10001 "$container_id" python -c \
+    'from pathlib import Path; Path("/app/config/config.toml").read_bytes()' \
+    >/dev/null 2>&1; then
+    printf 'UID 10001 unexpectedly read the host-owned 0600 config bind.\n' >&2
+    return 1
+  fi
+  docker exec --user 10001 "$container_id" python -c '
+import sys
+from pathlib import Path
+from app.config_file import load_haiun_config
+
+config = load_haiun_config(Path("/run/haiun-config/config.toml"))
+assert config.admin is not None
+assert config.admin.session_hours == int(sys.argv[1])
+' "$session_hours"
+  test "$(stat -c '%u:%g:%a' "$source_file")" = "$source_owner"
+}
+
 check_simple_config() {
   docker build \
     --build-arg PYPI_INDEX_URL="${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}" \
     --tag haiun-check:app .
+  assert_image_runtime_contract
   docker compose -f compose.simple.yml config >/dev/null
   HAIUN_SIMPLE_PORT=18765 \
   HAIUN_DATA_VOLUME=haiun-check-simple-data \
@@ -24,14 +87,35 @@ assert service["ports"][0]["published"] == "18765"
 assert service["ports"][0]["target"] == 8765
 assert service["environment"]["HAIUN_METRICS_ENABLED"] == "false"
 assert service["restart"] == "unless-stopped"
+assert service["user"] == "0:0"
+assert service["entrypoint"] == ["python", "-m", "app.docker_entrypoint"]
+assert service["command"] == [
+    "python",
+    "-m",
+    "uvicorn",
+    "app.main:app",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8765",
+    "--workers",
+    "1",
+]
+assert service["tmpfs"] == [
+    "/run/haiun-config:mode=0711,uid=0,gid=0,noexec,nosuid,nodev"
+]
 '
 }
 
 smoke_simple() (
   set -euo pipefail
+  umask 077
   project="haiun-check-simple-$$"
   port="${HAIUN_SIMPLE_TEST_PORT:-18765}"
   config_dir="$(mktemp -d)"
+  config_file="$config_dir/config.toml"
+  config_owner="$(id -u):$(id -g):600"
+  session_hours=19
   # shellcheck disable=SC2329  # Invoked indirectly by the EXIT trap.
   cleanup() {
     HAIUN_SIMPLE_PORT="$port" \
@@ -43,16 +127,25 @@ smoke_simple() (
   }
   trap cleanup EXIT
 
+  write_synthetic_haiun_config "$config_file" "$session_hours"
+  test "$(stat -c '%u:%g:%a' "$config_file")" = "$config_owner"
+
   HAIUN_SIMPLE_PORT="$port" \
   HAIUN_DATA_VOLUME="${project}-data" \
   HAIUN_CONFIG_DIR="$config_dir" \
   HAIUN_IMAGE=haiun-check:app \
     docker compose -p "$project" -f compose.simple.yml up -d --no-build
 
+  haiun_id="$(docker compose -p "$project" -f compose.simple.yml ps -q haiun)"
+  test -n "$haiun_id"
+
   curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-connrefused \
     --retry-all-errors \
     "http://127.0.0.1:${port}/api/health" |
     python3 -c 'import json, sys; assert json.load(sys.stdin)["status"] == "ok"'
+
+  assert_haiun_config_runtime \
+    "$haiun_id" "$config_file" "$session_hours" "$config_owner"
 )
 
 check_nginx_config() {
@@ -386,6 +479,7 @@ check_production_config() {
   docker build \
     --build-arg PYPI_INDEX_URL="${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}" \
     --tag haiun-check:app .
+  assert_image_runtime_contract
   # shellcheck disable=SC2016  # Python checks literal Compose shell variables.
   HAIUN_IMAGE=haiun-check:app \
   HAIUN_DATA_VOLUME=haiun-check-data \
@@ -430,6 +524,15 @@ for service, expected in expected_limits.items():
 
 assert services["alloy"]["network_mode"] == "service:nginx"
 assert services["haiun"]["environment"]["HAIUN_METRICS_ENABLED"] == "true"
+assert services["haiun"]["user"] == "0:0"
+assert services["haiun"]["entrypoint"] == [
+    "python",
+    "-m",
+    "app.docker_entrypoint",
+]
+assert services["haiun"]["tmpfs"] == [
+    "/run/haiun-config:mode=0711,uid=0,gid=0,noexec,nosuid,nodev"
+]
 assert services["grafana"]["environment"]["GF_SECURITY_ADMIN_PASSWORD__FILE"] == "/run/secrets/grafana_admin_password"
 assert set(services["grafana"]["networks"]) == {"edge", "monitoring"}
 grafana_entrypoint = " ".join(services["grafana"]["entrypoint"])
@@ -632,8 +735,11 @@ sys.stdout.write(sys.stdin.read().replace(secret, "[REDACTED]"))
   credential_probe_pid=""
   temp_dir=""
   production_config_dir=""
+  production_config_file=""
   secret_file=""
   grafana_netrc=""
+  config_owner="$(id -u):$(id -g):600"
+  session_hours=23
 
   export HAIUN_IMAGE=haiun-check:app
   export HAIUN_DATA_VOLUME="$data_volume"
@@ -646,14 +752,17 @@ sys.stdout.write(sys.stdin.read().replace(secret, "[REDACTED]"))
 
   temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/haiun-check-production.XXXXXX")"
   production_config_dir="$temp_dir/config"
+  production_config_file="$production_config_dir/config.toml"
   secret_file="$temp_dir/grafana_admin_password.txt"
   grafana_netrc="$temp_dir/grafana.netrc"
   trap exit_production_smoke EXIT
 
   mkdir -p "$production_config_dir"
+  write_synthetic_haiun_config "$production_config_file" "$session_hours"
   printf '%s\n' "$grafana_password" >"$secret_file"
   printf 'machine 127.0.0.1\nlogin admin\npassword %s\n' \
     "$grafana_password" >"$grafana_netrc"
+  test "$(stat -c '%u:%g:%a' "$production_config_file")" = "$config_owner"
   test "$(stat -c '%u:%a' "$secret_file")" = "${secret_owner}:600"
   test "$(stat -c '%u:%a' "$grafana_netrc")" = "${secret_owner}:600"
 
@@ -684,6 +793,7 @@ sys.stdout.write(sys.stdin.read().replace(secret, "[REDACTED]"))
   assert_memory alloy 100663296
   assert_memory nginx 67108864
 
+  haiun_id="$(docker compose -p "$production_project" -f compose.production.yml ps -q haiun)"
   nginx_id="$(docker compose -p "$production_project" -f compose.production.yml ps -q nginx)"
   grafana_id="$(docker compose -p "$production_project" -f compose.production.yml ps -q grafana)"
   grafana_security_ready=0
@@ -732,6 +842,9 @@ sys.stdout.write(sys.stdin.read().replace(secret, "[REDACTED]"))
     --retry-all-errors \
     http://127.0.0.1/api/health |
     python3 -c 'import json, sys; assert json.load(sys.stdin)["status"] == "ok"'
+
+  assert_haiun_config_runtime \
+    "$haiun_id" "$production_config_file" "$session_hours" "$config_owner"
 
   test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
     http://127.0.0.1/metrics)" = "404"

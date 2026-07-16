@@ -58,7 +58,7 @@ cp .env.docker.example .env
 
 两个 Compose 模式的 `HAIUN_PYPI_INDEX_URL` 默认都是官方的 `https://pypi.org/simple`；仅在受限网络中确有需要时覆盖它。
 
-先按下文“后端配置”填写真实配置，并将 `config/config.toml` 保留在本机、设置为 `0600`。Docker 只读挂载整个 `config/` 目录，不会把真实配置文件复制进镜像：
+先按下文“后端配置”填写真实配置，并将 `config/config.toml` 保留在本机、设置为 `0600`。Docker 只读挂载整个 `config/` 目录，不会把真实配置文件复制进镜像。容器启动时会以 root 仅将这个私有文件安全复制到容器专用的 tmpfs，副本设为 UID/GID `10001:10001`、模式 `0400`，随后清空附加组并永久降权到 UID/GID `10001:10001` 运行 Haiun。宿主机文件的所有者和权限不会被修改：
 
 ```bash
 chmod 600 config/config.toml
@@ -162,7 +162,7 @@ docker run --rm \
   -v haiun-data:/data:ro \
   -v "$PWD":/backup \
   alpine:3.22 \
-  tar -czf /backup/haiun-data.tar.gz -C /data .
+  sh -c 'umask 077; tar -czf /backup/haiun-data.tar.gz -C /data .'
 ```
 
 如果通过 `HAIUN_DATA_VOLUME` 覆盖了卷名，请在备份和恢复命令中把 `haiun-data` 替换为该实际卷名。恢复时目标命名卷必须为空：
