@@ -178,7 +178,8 @@ services:
         cp -- "$${GF_SECURITY_ADMIN_PASSWORD__FILE}" "$${secret_copy}"
         chown 472:0 "$${secret_copy}"
         chmod 0400 "$${secret_copy}"
-        export GF_SECURITY_ADMIN_PASSWORD__FILE="$${secret_copy}"
+        export GF_SECURITY_ADMIN_PASSWORD="\$$__file{$${secret_copy}}"
+        unset GF_SECURITY_ADMIN_PASSWORD__FILE
         exec su -s /bin/bash grafana -c 'exec /run.sh'
     depends_on:
       loki:

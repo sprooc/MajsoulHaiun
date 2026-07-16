@@ -382,6 +382,7 @@ check_smoke_exit_status() {
 
 check_production_config() {
   check_smoke_exit_status
+  check_precompose_cleanup
   docker build \
     --build-arg PYPI_INDEX_URL="${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}" \
     --tag haiun-check:app .
@@ -439,7 +440,10 @@ assert services["grafana"]["tmpfs"] == [
 assert "cp -- \"$${GF_SECURITY_ADMIN_PASSWORD__FILE}\" \"$${secret_copy}\"" in grafana_entrypoint
 assert "chown 472:0 \"$${secret_copy}\"" in grafana_entrypoint
 assert "chmod 0400 \"$${secret_copy}\"" in grafana_entrypoint
-assert "GF_SECURITY_ADMIN_PASSWORD__FILE=\"$${secret_copy}\"" in grafana_entrypoint
+assert (
+    "GF_SECURITY_ADMIN_PASSWORD=\"\\$$__file{$${secret_copy}}\""
+) in grafana_entrypoint
+assert "unset GF_SECURITY_ADMIN_PASSWORD__FILE" in grafana_entrypoint
 assert (
     "su -s /bin/bash grafana -c " + chr(39) + "exec /run.sh" + chr(39)
 ) in grafana_entrypoint
@@ -500,45 +504,25 @@ smoke_production() (
   set -euo pipefail
   umask 077
 
-  assert_host_port_available 80
-  assert_host_port_available 3000
-
-  project="haiun-check-production-$$"
-  temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/haiun-check-production.XXXXXX")"
-  config_dir="$temp_dir/config"
-  secret_file="$temp_dir/grafana_admin_password.txt"
-  grafana_password="haiun-check-grafana-password"
-  secret_owner="$(id -u)"
-  edge_network="${project}-edge"
-  monitoring_network="${project}-monitoring"
-  mkdir -p "$config_dir"
-  printf '%s\n' "$grafana_password" >"$secret_file"
-  chmod 600 "$secret_file"
-  test "$(stat -c '%u:%a' "$secret_file")" = "${secret_owner}:600"
-
-  export HAIUN_IMAGE=haiun-check:app
-  export HAIUN_DATA_VOLUME="${project}-data"
-  export HAIUN_CONFIG_DIR="$config_dir"
-  export HAIUN_TRUSTED_PROXIES_FILE="$root/deploy/nginx/trusted-proxies.default.conf"
-  export HAIUN_LOKI_VOLUME="${project}-loki"
-  export HAIUN_PROMETHEUS_VOLUME="${project}-prometheus"
-  export HAIUN_GRAFANA_VOLUME="${project}-grafana"
-  export HAIUN_EDGE_NETWORK="$edge_network"
-  export HAIUN_MONITORING_NETWORK="$monitoring_network"
-  export GRAFANA_ADMIN_PASSWORD_FILE="$secret_file"
-
   # shellcheck disable=SC2329  # Invoked by the EXIT trap handler.
-  cleanup() {
+  cleanup_production_smoke() {
     local artifact
     local cleanup_failed=0
 
-    if ! docker compose -p "$project" -f compose.production.yml \
-      down -v --remove-orphans >/dev/null 2>&1; then
-      printf 'Failed to stop the isolated production stack.\n' >&2
-      cleanup_failed=1
+    if test -n "$credential_probe_pid" && kill -0 "$credential_probe_pid" 2>/dev/null; then
+      kill "$credential_probe_pid" >/dev/null 2>&1 || true
+      wait "$credential_probe_pid" >/dev/null 2>&1 || true
     fi
 
-    if docker ps -a --filter "label=com.docker.compose.project=$project" \
+    if test "$compose_started" = "1"; then
+      if ! docker compose -p "$production_project" -f compose.production.yml \
+        down -v --remove-orphans >/dev/null 2>&1; then
+        printf 'Failed to stop the isolated production stack.\n' >&2
+        cleanup_failed=1
+      fi
+    fi
+
+    if docker ps -a --filter "label=com.docker.compose.project=$production_project" \
       --format '{{.ID}}' | grep -q .; then
       printf 'Isolated production containers remain after cleanup.\n' >&2
       cleanup_failed=1
@@ -550,39 +534,53 @@ smoke_production() (
       fi
     done
     for artifact in \
-      "$HAIUN_DATA_VOLUME" \
-      "$HAIUN_LOKI_VOLUME" \
-      "$HAIUN_PROMETHEUS_VOLUME" \
-      "$HAIUN_GRAFANA_VOLUME"; do
+      "$data_volume" \
+      "$loki_volume" \
+      "$prometheus_volume" \
+      "$grafana_volume"; do
       if docker volume inspect "$artifact" >/dev/null 2>&1; then
         printf 'Isolated volume remains after cleanup: %s\n' "$artifact" >&2
         cleanup_failed=1
       fi
     done
 
-    rm -rf "$temp_dir"
-    if test -e "$temp_dir" || test -e "$config_dir" || test -e "$secret_file"; then
+    if test -n "$temp_dir"; then
+      rm -rf "$temp_dir"
+    fi
+    if { test -n "$temp_dir" && test -e "$temp_dir"; } ||
+      { test -n "$production_config_dir" && test -e "$production_config_dir"; } ||
+      { test -n "$secret_file" && test -e "$secret_file"; } ||
+      { test -n "$grafana_netrc" && test -e "$grafana_netrc"; }; then
       printf 'Temporary production files remain after cleanup: %s\n' "$temp_dir" >&2
       cleanup_failed=1
     fi
 
+    if test "${HAIUN_CHECK_FORCE_CLEANUP_FAILURE:-0}" = "1"; then
+      cleanup_failed=1
+    fi
     return "$cleanup_failed"
   }
 
   # shellcheck disable=SC2329  # Invoked indirectly by the EXIT trap.
-  exit_smoke() {
+  exit_production_smoke() {
     local original_status="$?"
     local cleanup_status=0
     local final_status
 
     trap - EXIT
-    if test "$original_status" -ne 0; then
-      docker compose -p "$project" -f compose.production.yml ps --all >&2 || true
-      docker compose -p "$project" -f compose.production.yml \
+    if test "$original_status" -ne 0 && test "$compose_started" = "1"; then
+      docker compose -p "$production_project" -f compose.production.yml ps --all >&2 || true
+      docker compose -p "$production_project" -f compose.production.yml \
         logs --no-color --tail=200 2>&1 |
-        sed "s/${grafana_password}/[REDACTED]/g" >&2 || true
+        python3 -c '
+from pathlib import Path
+import sys
+
+secret = Path(sys.argv[1]).read_text(encoding="utf-8").rstrip("\n")
+sys.stdout.write(sys.stdin.read().replace(secret, "[REDACTED]"))
+' "$secret_file" >&2 || true
     fi
-    cleanup || cleanup_status="$?"
+    cleanup_production_smoke || cleanup_status="$?"
     if smoke_exit_status "$original_status" "$cleanup_status"; then
       final_status=0
     else
@@ -590,16 +588,91 @@ smoke_production() (
     fi
     exit "$final_status"
   }
-  trap exit_smoke EXIT
 
-  docker compose -p "$project" -f compose.production.yml up -d --no-build
+  assert_no_password_exposure() {
+    local checker_pid="$BASHPID"
+    local curl_pid="$1"
+    local -a container_ids
+    local exposure_snapshot
+
+    mapfile -t container_ids < <(
+      docker compose -p "$production_project" -f compose.production.yml ps -q
+    )
+    exposure_snapshot="$({
+      tr '\0' '\n' <"/proc/$curl_pid/cmdline"
+      tr '\0' '\n' <"/proc/$curl_pid/environ"
+      tr '\0' '\n' <"/proc/$checker_pid/cmdline"
+      tr '\0' '\n' <"/proc/$checker_pid/environ"
+      docker inspect --format '{{json .Config.Env}} {{json .Path}} {{json .Args}}' \
+        "${container_ids[@]}"
+      docker top "$grafana_id" -eo pid,args
+      docker exec --user 472 "$grafana_id" sh -c \
+        "tr '\\0' '\\n' </proc/1/cmdline; tr '\\0' '\\n' </proc/1/environ"
+    } 2>/dev/null)"
+
+    if printf '%s' "$exposure_snapshot" | rg -F -f "$secret_file" -q; then
+      printf 'Grafana password reached a running command line or environment.\n' >&2
+      return 1
+    fi
+  }
+
+  assert_host_port_available 80
+  assert_host_port_available 3000
+
+  production_project="haiun-check-production-$$"
+  grafana_password="haiun-check-grafana-password"
+  secret_owner="$(id -u)"
+  edge_network="${production_project}-edge"
+  monitoring_network="${production_project}-monitoring"
+  data_volume="${production_project}-data"
+  loki_volume="${production_project}-loki"
+  prometheus_volume="${production_project}-prometheus"
+  grafana_volume="${production_project}-grafana"
+  compose_started=0
+  credential_probe_pid=""
+  temp_dir=""
+  production_config_dir=""
+  secret_file=""
+  grafana_netrc=""
+
+  export HAIUN_IMAGE=haiun-check:app
+  export HAIUN_DATA_VOLUME="$data_volume"
+  export HAIUN_TRUSTED_PROXIES_FILE="$root/deploy/nginx/trusted-proxies.default.conf"
+  export HAIUN_LOKI_VOLUME="$loki_volume"
+  export HAIUN_PROMETHEUS_VOLUME="$prometheus_volume"
+  export HAIUN_GRAFANA_VOLUME="$grafana_volume"
+  export HAIUN_EDGE_NETWORK="$edge_network"
+  export HAIUN_MONITORING_NETWORK="$monitoring_network"
+
+  temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/haiun-check-production.XXXXXX")"
+  production_config_dir="$temp_dir/config"
+  secret_file="$temp_dir/grafana_admin_password.txt"
+  grafana_netrc="$temp_dir/grafana.netrc"
+  trap exit_production_smoke EXIT
+
+  mkdir -p "$production_config_dir"
+  printf '%s\n' "$grafana_password" >"$secret_file"
+  printf 'machine 127.0.0.1\nlogin admin\npassword %s\n' \
+    "$grafana_password" >"$grafana_netrc"
+  test "$(stat -c '%u:%a' "$secret_file")" = "${secret_owner}:600"
+  test "$(stat -c '%u:%a' "$grafana_netrc")" = "${secret_owner}:600"
+
+  export HAIUN_CONFIG_DIR="$production_config_dir"
+  export GRAFANA_ADMIN_PASSWORD_FILE="$secret_file"
+
+  if test -n "${HAIUN_CHECK_PRECOMPOSE_EXIT_STATUS:-}"; then
+    exit "$HAIUN_CHECK_PRECOMPOSE_EXIT_STATUS"
+  fi
+
+  compose_started=1
+  docker compose -p "$production_project" -f compose.production.yml up -d --no-build
 
   assert_memory() {
     local service="$1"
     local expected="$2"
     local container_id
     local actual
-    container_id="$(docker compose -p "$project" -f compose.production.yml ps -q "$service")"
+    container_id="$(docker compose -p "$production_project" -f compose.production.yml ps -q "$service")"
     actual="$(docker inspect --format '{{.HostConfig.Memory}}' "$container_id")"
     test "$actual" = "$expected"
   }
@@ -611,19 +684,34 @@ smoke_production() (
   assert_memory alloy 100663296
   assert_memory nginx 67108864
 
-  nginx_id="$(docker compose -p "$project" -f compose.production.yml ps -q nginx)"
-  grafana_id="$(docker compose -p "$project" -f compose.production.yml ps -q grafana)"
-  test "$(docker exec "$grafana_id" sh -c \
-    "awk '/^Uid:/ {print \$2}' /proc/1/status")" = "472"
-  test "$(docker exec "$grafana_id" stat -c '%u:%g:%a' \
-    /run/haiun-secrets/grafana_admin_password)" = "472:0:400"
+  nginx_id="$(docker compose -p "$production_project" -f compose.production.yml ps -q nginx)"
+  grafana_id="$(docker compose -p "$production_project" -f compose.production.yml ps -q grafana)"
+  grafana_security_ready=0
+  grafana_uid=""
+  grafana_secret_mode=""
+  for _ in $(seq 1 30); do
+    grafana_uid="$(docker exec "$grafana_id" sh -c \
+      "awk '/^Uid:/ {print \$2}' /proc/1/status" 2>/dev/null || true)"
+    grafana_secret_mode="$(docker exec "$grafana_id" stat -c '%u:%g:%a' \
+      /run/haiun-secrets/grafana_admin_password 2>/dev/null || true)"
+    if test "$grafana_uid" = "472" && test "$grafana_secret_mode" = "472:0:400"; then
+      grafana_security_ready=1
+      break
+    fi
+    sleep 1
+  done
+  if test "$grafana_security_ready" != "1"; then
+    printf 'Grafana did not drop to UID 472 with a 0400 container secret; uid=%s mode=%s.\n' \
+      "$grafana_uid" "$grafana_secret_mode" >&2
+    exit 1
+  fi
   test "$(stat -c '%u:%a' "$secret_file")" = "${secret_owner}:600"
   if docker inspect --format '{{json .Config.Env}} {{json .Path}} {{json .Args}}' \
-    "$grafana_id" | rg -F -q "$grafana_password"; then
+    "$grafana_id" | rg -F -f "$secret_file" -q; then
     printf 'Grafana password reached configured environment or argv.\n' >&2
     exit 1
   fi
-  if docker logs "$grafana_id" 2>&1 | rg -F -q "$grafana_password"; then
+  if docker logs "$grafana_id" 2>&1 | rg -F -f "$secret_file" -q; then
     printf 'Grafana password reached container logs.\n' >&2
     exit 1
   fi
@@ -632,7 +720,7 @@ smoke_production() (
   docker inspect --format '{{json .HostConfig.PortBindings}}' "$grafana_id" |
     rg -q '"HostIp":"127.0.0.1","HostPort":"3000"'
   for private_service in haiun alloy loki prometheus; do
-    container_id="$(docker compose -p "$project" -f compose.production.yml ps -q "$private_service")"
+    container_id="$(docker compose -p "$production_project" -f compose.production.yml ps -q "$private_service")"
     if docker inspect --format '{{json .HostConfig.PortBindings}}' "$container_id" |
       rg -q 'HostPort'; then
       printf '%s unexpectedly publishes a host port.\n' "$private_service" >&2
@@ -706,10 +794,31 @@ assert results == {
     http://127.0.0.1:3000/api/health |
     python3 -c 'import json, sys; assert json.load(sys.stdin)["database"] == "ok"'
 
+  curl --fail --silent --show-error \
+    --netrc-file "$grafana_netrc" \
+    --limit-rate 1 \
+    --max-time 30 \
+    'http://127.0.0.1:3000/api/search?query=Haiun' >/dev/null 2>&1 &
+  credential_probe_pid="$!"
+  credential_probe_seen=0
+  for _ in $(seq 1 30); do
+    if kill -0 "$credential_probe_pid" 2>/dev/null &&
+      test -r "/proc/$credential_probe_pid/cmdline"; then
+      assert_no_password_exposure "$credential_probe_pid"
+      credential_probe_seen=1
+      break
+    fi
+    sleep 0.1
+  done
+  test "$credential_probe_seen" = "1"
+  kill "$credential_probe_pid" >/dev/null 2>&1 || true
+  wait "$credential_probe_pid" >/dev/null 2>&1 || true
+  credential_probe_pid=""
+
   dashboards_ready=0
   for _ in $(seq 1 30); do
     if curl --fail --silent --show-error \
-      --user "admin:${grafana_password}" \
+      --netrc-file "$grafana_netrc" \
       'http://127.0.0.1:3000/api/search?query=Haiun' |
       python3 -c '
 import json, sys
@@ -728,11 +837,47 @@ assert {
   test "$dashboards_ready" = "1"
 
   test "$(stat -c '%u:%a' "$secret_file")" = "${secret_owner}:600"
-  if docker logs "$grafana_id" 2>&1 | rg -F -q "$grafana_password"; then
+  test "$(stat -c '%u:%a' "$grafana_netrc")" = "${secret_owner}:600"
+  if docker logs "$grafana_id" 2>&1 | rg -F -f "$secret_file" -q; then
     printf 'Grafana password reached container logs.\n' >&2
     exit 1
   fi
 )
+
+check_precompose_cleanup() {
+  local actual_status
+  local injection_root
+  local leftovers
+
+  injection_root="$(mktemp -d "${TMPDIR:-/tmp}/haiun-precompose-check.XXXXXX")"
+
+  if TMPDIR="$injection_root" \
+    HAIUN_CHECK_PRECOMPOSE_EXIT_STATUS=0 \
+    HAIUN_CHECK_FORCE_CLEANUP_FAILURE=1 \
+    smoke_production; then
+    actual_status=0
+  else
+    actual_status="$?"
+  fi
+  leftovers="$(find "$injection_root" -mindepth 1 -print -quit)"
+  if test "$actual_status" != "1" || test -n "$leftovers"; then
+    rm -rf "$injection_root"
+    return 1
+  fi
+
+  if TMPDIR="$injection_root" \
+    HAIUN_CHECK_PRECOMPOSE_EXIT_STATUS=7 \
+    HAIUN_CHECK_FORCE_CLEANUP_FAILURE=1 \
+    smoke_production; then
+    actual_status=0
+  else
+    actual_status="$?"
+  fi
+  leftovers="$(find "$injection_root" -mindepth 1 -print -quit)"
+  rm -rf "$injection_root"
+  test "$actual_status" = "7"
+  test -z "$leftovers"
+}
 
 case "$mode" in
   simple)
