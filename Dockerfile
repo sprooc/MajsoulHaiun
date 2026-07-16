@@ -14,8 +14,6 @@ ARG PYPI_INDEX_URL=https://pypi.org/simple
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
     PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH=/app/backend \
     HAIUN_DATA_DIR=/data \
@@ -27,10 +25,11 @@ COPY backend/ ./backend/
 RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt \
       --output-file /tmp/requirements.txt \
     && python -m venv /app/.venv \
-    && /app/.venv/bin/pip install --index-url "$PYPI_INDEX_URL" \
+    && /app/.venv/bin/pip install --no-cache-dir --index-url "$PYPI_INDEX_URL" \
       --require-hashes --requirement /tmp/requirements.txt \
-    && /app/.venv/bin/pip install --index-url "$PYPI_INDEX_URL" --no-deps . \
-    && rm /tmp/requirements.txt
+    && /app/.venv/bin/pip install --no-cache-dir --index-url "$PYPI_INDEX_URL" \
+      --no-deps . \
+    && rm -rf /root/.cache/pip /tmp/requirements.txt
 COPY --from=frontend-build /build/frontend/dist ./frontend/dist
 
 RUN groupadd --system --gid 10001 haiun \

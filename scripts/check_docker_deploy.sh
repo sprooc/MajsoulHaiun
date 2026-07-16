@@ -8,7 +8,7 @@ mode="${1:-all}"
 
 check_simple_config() {
   docker build \
-    --build-arg PYPI_INDEX_URL="${HAIUN_PYPI_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}" \
+    --build-arg PYPI_INDEX_URL="${HAIUN_PYPI_INDEX_URL:-https://pypi.org/simple}" \
     --tag haiun-check:app .
   docker compose -f compose.simple.yml config >/dev/null
   HAIUN_SIMPLE_PORT=18765 \
