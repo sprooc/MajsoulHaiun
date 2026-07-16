@@ -110,7 +110,7 @@ services:
         source: ./deploy/alloy/config.alloy
         target: /etc/alloy/config.alloy
         read_only: true
-    mem_limit: 96m
+    mem_limit: 192m
     restart: unless-stopped
     healthcheck:
       test:
@@ -209,7 +209,7 @@ services:
     networks:
       - edge
       - monitoring
-    mem_limit: 192m
+    mem_limit: 512m
     restart: unless-stopped
     healthcheck:
       test:
