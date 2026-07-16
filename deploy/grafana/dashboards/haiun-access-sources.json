@@ -1,0 +1,67 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "single"}},
+      "targets": [{"expr": "topk(10, sum by (client_ip) (count_over_time({service=\"haiun\", log_type=\"api_access\"} | json | __error__=\"\" [5m])))", "legendFormat": "{{client_ip}}", "queryType": "range", "refId": "A"}],
+      "title": "Top client IPs",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "id": 2,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "single"}},
+      "targets": [{"expr": "topk(10, sum by (referrer_host) (count_over_time({service=\"haiun\", log_type=\"api_access\"} | json | __error__=\"\" | referrer_host != \"\" [5m])))", "legendFormat": "{{referrer_host}}", "queryType": "range", "refId": "A"}],
+      "title": "Top referrer hosts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "id": 3,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "single"}},
+      "targets": [{"expr": "topk(10, sum by (user_agent) (count_over_time({service=\"haiun\", log_type=\"api_access\"} | json | __error__=\"\" [5m])))", "legendFormat": "{{user_agent}}", "queryType": "range", "refId": "A"}],
+      "title": "Top user-agents",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 8},
+      "id": 4,
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [{"expr": "{service=\"haiun\", log_type=\"api_access\"} | json", "queryType": "range", "refId": "A"}],
+      "title": "Recent API requests",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 8},
+      "id": 5,
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [
+        {"expr": "{service=\"haiun\", log_type=\"api_access\"} | json | __error__=\"\" | request_time > 1", "queryType": "range", "refId": "A"},
+        {"expr": "{service=\"haiun\", log_type=\"api_access\"} | json | __error__=\"\" | status >= 500", "queryType": "range", "refId": "B"}
+      ],
+      "title": "Slow or failed requests",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["haiun", "access"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "Haiun Access Sources",
+  "uid": "haiun-access-sources",
+  "version": 1
+}

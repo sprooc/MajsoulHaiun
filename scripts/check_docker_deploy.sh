@@ -94,6 +94,55 @@ check_telemetry_config() {
     validate /etc/alloy/config.alloy
 }
 
+check_grafana_config() {
+  python3 - <<'PY'
+import json
+from pathlib import Path
+
+dashboard_dir = Path("deploy/grafana/dashboards")
+expected = {
+    "haiun-api-overview.json": ("haiun-api-overview", "Haiun API Overview"),
+    "haiun-access-sources.json": ("haiun-access-sources", "Haiun Access Sources"),
+    "haiun-backend-runtime.json": ("haiun-backend-runtime", "Haiun Backend Runtime"),
+}
+for filename, (uid, title) in expected.items():
+    dashboard = json.loads((dashboard_dir / filename).read_text(encoding="utf-8"))
+    assert dashboard["uid"] == uid
+    assert dashboard["title"] == title
+    assert dashboard["refresh"] == "30s"
+    assert dashboard["panels"]
+
+all_text = "\n".join(
+    path.read_text(encoding="utf-8")
+    for path in sorted(dashboard_dir.glob("*.json"))
+)
+for required in (
+    "haiun_http_requests_total",
+    "haiun_http_request_duration_seconds_bucket",
+    "process_resident_memory_bytes",
+    'service=\\"haiun\\"',
+    'log_type=\\"api_access\\"',
+):
+    assert required in all_text
+
+for forbidden in ("oauth_token", "haiun_admin_session", "request_body", "authorization"):
+    assert forbidden not in all_text.lower()
+
+datasources = Path(
+    "deploy/grafana/provisioning/datasources/haiun.yml"
+).read_text(encoding="utf-8")
+assert "uid: prometheus" in datasources
+assert "url: http://prometheus:9090" in datasources
+assert "uid: loki" in datasources
+assert "url: http://loki:3100" in datasources
+
+providers = Path(
+    "deploy/grafana/provisioning/dashboards/haiun.yml"
+).read_text(encoding="utf-8")
+assert "path: /var/lib/grafana/dashboards" in providers
+PY
+}
+
 case "$mode" in
   simple)
     check_simple_config
@@ -105,14 +154,18 @@ case "$mode" in
   telemetry)
     check_telemetry_config
     ;;
+  grafana)
+    check_grafana_config
+    ;;
   all)
     check_simple_config
     smoke_simple
     check_nginx_config
     check_telemetry_config
+    check_grafana_config
     ;;
   *)
-    printf 'Usage: %s [simple|nginx|telemetry|all]\n' "$0" >&2
+    printf 'Usage: %s [simple|nginx|telemetry|grafana|all]\n' "$0" >&2
     exit 2
     ;;
 esac
