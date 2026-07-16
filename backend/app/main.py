@@ -23,6 +23,7 @@ from app.config import REPOSITORY_ROOT, Settings
 from app.config_file import HaiunConfigError, HaiunFileConfig, load_haiun_config
 from app.db import create_session_factory
 from app.errors import AppError
+from app.metrics import ApiMetrics, ApiMetricsMiddleware
 from app.migrations import upgrade_database
 from app.sources.amae_koromo import AmaeKoromoSource
 from app.sources.registry import SourceRegistry
@@ -59,6 +60,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await engine.dispose()
 
     app = FastAPI(title="牌运 Haiun", version=resolved.version, lifespan=lifespan)
+    if resolved.metrics_enabled:
+        metrics = ApiMetrics.create()
+        app.state.metrics = metrics
+        app.add_middleware(ApiMetricsMiddleware, metrics=metrics)
+
+        @app.get("/metrics", include_in_schema=False)
+        def prometheus_metrics() -> Response:
+            return metrics.response()
+
     app.state.settings = resolved
     try:
         app.state.file_config = load_haiun_config(resolved.config_path, missing_ok=True)

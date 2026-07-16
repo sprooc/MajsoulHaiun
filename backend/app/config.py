@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     )
     version: str = "0.1.0"
     allowed_origins: Annotated[tuple[str, ...], NoDecode] = ()
+    metrics_enabled: bool = False
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
