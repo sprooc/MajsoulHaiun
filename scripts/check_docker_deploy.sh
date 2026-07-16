@@ -274,12 +274,18 @@ def parse_records(path, section):
         if indent == 0:
             break
         content = line.strip()
+        record_start = False
 
-        if indent == 2 and content.startswith("- "):
+        if indent == 2:
+            if not content.startswith("- "):
+                raise AssertionError(
+                    f"invalid {section} record continuation in {path}: {line}"
+                )
             current = {}
             records.append(current)
             nested_key = None
             content = content[2:]
+            record_start = True
         elif current is None:
             raise AssertionError(f"invalid {section} record in {path}: {line}")
 
@@ -287,7 +293,7 @@ def parse_records(path, section):
         assert separator, (path, section, line)
         value = value.strip()
 
-        if indent in (2, 4):
+        if record_start or indent == 4:
             if value:
                 current[key] = parse_scalar(value)
                 nested_key = None
