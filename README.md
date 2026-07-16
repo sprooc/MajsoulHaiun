@@ -46,6 +46,160 @@ npm --prefix frontend install
 
 随后运行 `scripts/dev.sh` 或 `scripts/start.sh`。脚本从自身路径解析仓库根目录，因此可从任意工作目录启动。
 
+## Docker
+
+### 前置条件
+
+安装 Docker Engine 28 或更高版本，以及 Docker Compose 2.40 或更高版本。仅在需要覆盖卷名、路径或 Python 包索引等非敏感值时复制环境变量示例：
+
+```bash
+cp .env.docker.example .env
+```
+
+两个 Compose 模式的 `HAIUN_PYPI_INDEX_URL` 默认都是官方的 `https://pypi.org/simple`；仅在受限网络中确有需要时覆盖它。
+
+先按下文“后端配置”填写真实配置，并将 `config/config.toml` 保留在本机、设置为 `0600`。Docker 只读挂载整个 `config/` 目录，不会把真实配置文件复制进镜像：
+
+```bash
+chmod 600 config/config.toml
+```
+
+### 简单模式
+
+简单模式直接发布 Haiun，默认监听宿主机端口 `8765`：
+
+```bash
+docker compose -f compose.simple.yml up -d --build
+docker compose -f compose.simple.yml ps
+curl http://127.0.0.1:8765/api/health
+```
+
+停止服务但保留数据：
+
+```bash
+docker compose -f compose.simple.yml down
+```
+
+### 生产模式
+
+生产模式的 Nginx 绑定宿主机端口 80，并要求现有 TLS 代理或负载均衡器把 HTTP 转发给它。用防火墙将服务器端口 80 严格限制为只有该 TLS 代理或负载均衡器的实际来源地址可以连接。该栈本身不签发证书，也不终止公网 TLS。
+
+创建 Grafana 密码文件且不把密码打印到终端；文件位于已被 Git 忽略的本地 `secrets/` 目录中，并由 `umask 077` 以 `0600` 模式创建：
+
+```bash
+install -d -m 0700 secrets
+umask 077
+openssl rand -base64 32 > secrets/grafana_admin_password.txt
+```
+
+如果 TLS 代理不是从回环地址或 RFC 1918 地址连接，请复制默认 Nginx include，并把其中的网络替换为该代理文档给出的实际来源网络：
+
+```bash
+cp deploy/nginx/trusted-proxies.default.conf config/trusted-proxies.conf
+```
+
+在 `.env` 中设置这个非敏感路径：
+
+```dotenv
+HAIUN_TRUSTED_PROXIES_FILE=./config/trusted-proxies.conf
+```
+
+可信代理文件虽然不含凭据，仍是安全敏感配置。绝不能信任 `0.0.0.0/0`：那会允许直接客户端伪造源 IP。只列出实际 TLS 代理或负载均衡器的来源网络。
+
+启动生产栈：
+
+```bash
+docker compose -f compose.production.yml up -d --build
+docker compose -f compose.production.yml ps
+curl http://127.0.0.1/api/health
+```
+
+生产模式以 2 vCPU、2 GiB RAM 的宿主机为基线。Compose 对 Haiun、Nginx、Alloy、Loki、Prometheus 和 Grafana 分别设置 `768 MiB`、`64 MiB`、`96 MiB`、`192 MiB`、`192 MiB` 和 `192 MiB` 的内存上限。
+
+生产 Compose 只发布 Nginx 的 `80:80` 和 Grafana 的 `127.0.0.1:3000:3000`；只有 Nginx 对外。Grafana 通过 SSH 隧道访问：
+
+```bash
+ssh -L 3000:127.0.0.1:3000 user@server
+```
+
+然后在本机打开 `http://127.0.0.1:3000`，以 `admin` 登录，并使用 `secrets/grafana_admin_password.txt` 中保存的密码。
+
+停止生产栈但保留所有命名卷：
+
+```bash
+docker compose -f compose.production.yml down
+```
+
+### 仪表盘、健康状态与资源
+
+Grafana 自动预置三个仪表盘：
+
+- **Haiun API Overview**：请求速率、状态与错误概况（当前显示 5xx 错误率）、p50/p95/p99 延迟、处理中请求数，以及最繁忙的规范化路由。
+- **Haiun Access Sources**：客户端 IP、来源站点主机名、用户代理、最近请求、慢请求和失败请求。
+- **Haiun Backend Runtime**：Python CPU、常驻内存、垃圾回收、运行时间、Haiun 抓取健康状态，以及监控服务抓取健康状态。
+
+排障时检查容器、日志、资源与服务就绪状态：
+
+```bash
+docker compose -f compose.production.yml ps
+docker compose -f compose.production.yml logs --tail=200 nginx haiun alloy loki prometheus grafana
+docker stats --no-stream
+docker compose -f compose.production.yml exec prometheus \
+  wget -qO- http://127.0.0.1:9090/-/ready
+docker compose -f compose.production.yml exec grafana \
+  wget -qO- http://127.0.0.1:3000/api/health
+```
+
+日志和指标均保留 30 天，Prometheus 另有 `512 MB` 大小上限。Grafana 仅能从宿主机回环地址访问。默认不执行 IP 地理定位，不部署宿主机范围的 exporter，也不收集宿主机全局指标。
+
+### 备份与恢复
+
+下面的命令先停止生产服务，再备份默认的应用数据卷；`down` 不会删除命名卷：
+
+```bash
+docker compose -f compose.production.yml down
+docker run --rm \
+  -v haiun-data:/data:ro \
+  -v "$PWD":/backup \
+  alpine:3.22 \
+  tar -czf /backup/haiun-data.tar.gz -C /data .
+```
+
+如果通过 `HAIUN_DATA_VOLUME` 覆盖了卷名，请在备份和恢复命令中把 `haiun-data` 替换为该实际卷名。恢复时目标命名卷必须为空：
+
+```bash
+docker volume create haiun-data
+docker run --rm \
+  -v haiun-data:/data \
+  -v "$PWD":/backup:ro \
+  alpine:3.22 \
+  tar -xzf /backup/haiun-data.tar.gz -C /data
+```
+
+### 升级
+
+拉取代码、刷新基础镜像并重新创建有变化的服务：
+
+```bash
+git pull --ff-only
+docker compose -f compose.production.yml build --pull
+docker compose -f compose.production.yml up -d
+```
+
+### 2 GiB 主机的交换空间
+
+在 2 GiB RAM 主机上，可按发行版要求创建 2 GiB 交换文件作为内存突增时的应急保护：
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+swapon --show
+```
+
+交换空间不能替代 CPU 或 RAM。如果分析并发、访问流量、仪表盘使用量或保留数据显著增长，建议至少使用 4 GiB RAM。持久启用交换文件时，请按发行版的正式文档把它加入 `/etc/fstab`，不要自动添加未经审核的配置行。
+
 ## 后端配置
 
 管理员访问与完整雀魂牌谱账号使用同一个后端本地 TOML。复制示例文件：
@@ -115,6 +269,11 @@ nix develop -c .venv/bin/python -m pytest backend/tests -v
 nix develop -c npm --prefix frontend test
 nix develop -c npm --prefix frontend run build
 nix develop -c npm --prefix frontend run e2e
-bash -n scripts/dev.sh scripts/start.sh
-shellcheck scripts/dev.sh scripts/start.sh
+bash -n scripts/dev.sh scripts/start.sh scripts/check_docker_deploy.sh
+nix develop -c shellcheck scripts/dev.sh scripts/start.sh scripts/check_docker_deploy.sh
+docker compose -f compose.simple.yml config
+GRAFANA_ADMIN_PASSWORD_FILE=/dev/null docker compose -f compose.production.yml config
+scripts/check_docker_deploy.sh all
 ```
+
+生产烟雾测试要求宿主机端口 80 和回环端口 3000 空闲。脚本使用隔离的临时配置、密码文件、网络和卷名，结束时会清理这些资源。
