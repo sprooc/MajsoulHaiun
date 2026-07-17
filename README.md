@@ -1,19 +1,25 @@
 # 牌运 Haiun
 
-牌运（Haiun，取自日文“牌運”的读音）是立直麻将牌谱与运气分析应用。它支持标准四人麻将与三人麻将，把原始牌谱、规范对局事实和分析结果分层保存在本机，并解释随机机会如何影响每位玩家。
+**Haiun** (牌运, the Japanese reading of “牌運”) is a s explainable luck analyzer for riichi mahjong replays. It separates random opportunity from match results so that players can review how chance affected each seat without treating luck as skill.
 
-## 功能
+Haiun supports both four-player mahjong and three-player mahjong, stores replay data and analysis results locally, and provides an English and Simplified Chinese web interface.
 
-- 通过 Amae-Koromo 的匿名公开索引搜索四人/三人玩家和近期对局。
-- 通过后端本地账号配置导入雀魂分享链接或牌谱 ID，也支持解码 JSON 和牌运规范 JSON。
-- 按雀魂牌谱 ID 缓存原始牌谱与规范牌谱，重复导入不会再次登录或下载。
-- 使用 `baseline-v1` 分析配牌、自摸进张和随机事件；对手主动弃牌作为 `opponent_gift` 信息展示，不计入主牌运分数。
-- 分别显示 0–100 牌运分数、z-score、置信度和实战点数。
-- 支持三麻缺少二至八万、拔北、三人计分与自摸损规则事实。
+## Features
 
-## NixOS / Nix
+- Search four-player and three-player Mahjong Soul (雀魂) players and recent games through the public Amae-Koromo index.
+- Import Mahjong Soul share links, replay IDs, decoded JSON, or Haiun canonical JSON.
+- Cache raw and canonical replays by Mahjong Soul replay ID to avoid unnecessary downloads on repeated imports.
+- Analyze starting hands, self-draws, dora reveals, and other random events with the deterministic `baseline-v1` algorithm.
+- Compare players using a 0–100 luck score, z-score, confidence level, component breakdown, and event timeline.
+- Show match points separately from luck results.
+- Support three-player rules, including the removal of 2–8 manzu, kita, sanma scoring, and tsumo-loss rules.
+- Preserve opponents’ voluntary discards as `opponent_gift` events while excluding them from the main luck score.
 
-进入开发环境：
+## Quick Start
+
+### Nix / NixOS
+
+Create the development environment and install dependencies:
 
 ```bash
 nix develop
@@ -22,21 +28,29 @@ uv pip install -e '.[test]'
 npm --prefix frontend install
 ```
 
-开发模式：
+Run the development servers:
 
 ```bash
 nix run .#dev
 ```
 
-生产模式：
+Build the frontend and start the production server:
 
 ```bash
 nix run .#start
 ```
 
-## 常规 Linux
+### Standard Linux
 
-需要 Python 3.11+、Node.js 22+、npm、SQLite 和 Bash。脚本检测到 `uv` 时会优先使用，否则回退到标准库 `venv` 与 `pip`。首次安装：
+Requirements:
+
+- Python 3.11 or newer
+- Node.js 22 or newer
+- npm
+- SQLite
+- Bash
+
+Create the environment and install dependencies:
 
 ```bash
 python -m venv .venv
@@ -44,77 +58,122 @@ python -m venv .venv
 npm --prefix frontend install
 ```
 
-随后运行 `scripts/dev.sh` 或 `scripts/start.sh`。脚本从自身路径解析仓库根目录，因此可从任意工作目录启动。
+Then start Haiun in development or production mode:
 
-## Docker
+```bash
+./scripts/dev.sh
+./scripts/start.sh
+```
 
-See the English [Docker deployment guide](docs/docker.md) for simple mode,
-production monitoring, optional build proxies, backups, upgrades, and resource
-guidance.
+The scripts prefer `uv` when it is available and otherwise use the standard Python `venv` and `pip` tools. They resolve the repository root from their own location, so they can be launched from any working directory.
 
-## 后端配置
+By default, the production server is available at `http://127.0.0.1:8765` and also listens on the local network.
 
-管理员访问与完整雀魂牌谱账号使用同一个后端本地 TOML。复制示例文件：
+### Docker
+
+Haiun includes two Docker Compose configurations:
+
+- `compose.simple.yml` runs the application directly on port `8765`.
+- `compose.production.yml` adds Nginx and a Grafana, Loki, Prometheus, and Alloy monitoring stack.
+
+See the [Docker deployment guide](docs/docker.md) for prerequisites, configuration, TLS guidance, monitoring, backups, upgrades, build proxies, and resource limits.
+
+## Configuration
+
+Haiun uses a local TOML file. Copy the example before starting the application:
 
 ```bash
 cp config/config.example.toml config/config.toml
 chmod 600 config/config.toml
 ```
 
-在 `config/config.toml` 中按优先顺序配置一个或多个国服账号，并设置管理员密码：
+Configure one or more accounts for Mahjong Soul's China server and an administrator password:
 
 ```toml
 timeout_seconds = 15
 
 [[accounts]]
-username = "你的雀魂账号"
-password = "你的雀魂密码"
+username = "first-account@example.com"
+password = "replace-me"
 host = "https://game.maj-soul.com"
 
 [[accounts]]
-username = "备用账号"
-password = "备用账号密码"
+username = "backup-account@example.com"
+password = "replace-me"
+host = "https://game.maj-soul.com"
 
 [admin]
-password = "请替换为足够长且唯一的管理员密码"
+password = "replace-with-a-long-unique-password"
 session_hours = 12
 ```
 
-后端会按 `[[accounts]]` 的书写顺序尝试；某个账号登录失败或无权访问牌谱时继续下一个账号。`HAIUN_CONFIG` 可覆盖配置文件路径。真实配置文件已被 Git 忽略，不要把账号密码或管理员密码写入示例文件、README、日志或提交记录。当前账号密码登录方式面向雀魂国服；OAuth、邮件验证码和浏览器会话不在支持范围内。
+Accounts are tried from top to bottom. If an account cannot sign in or access a replay, Haiun continues with the next account. Set `HAIUN_CONFIG` to use a different configuration path.
 
-## 访客与管理员访问
+Keep the real configuration file private. Do not place Mahjong Soul credentials or the administrator password in the example file, documentation, logs, or version control. The current username/password replay-fetch flow is intended for Mahjong Soul’s China server. OAuth tokens, email verification codes, and browser sessions are neither requested nor supported.
 
-网站默认以访客模式打开。访客可以搜索、导入和开始分析，但导航中不显示全局“分析”列表。每次开始分析都会创建独立的 `/results/<随机 UUID>` 地址；相同牌谱可以复用后台计算缓存，但不会覆盖之前的结果地址。
+## Access Model
 
-结果地址是可分享的能力链接：没有公开列表或搜索接口可以枚举其他人的结果，但任何收到完整地址的人都可以打开它。请只把结果链接分享给希望查看结果的人。
+Haiun opens in visitor mode by default. Visitors can search for games, import replays, and start analyses, but they cannot browse the global analysis list.
 
-管理员入口是不会出现在页面导航中的 `/admin`。输入 `config/config.toml` 中至少 12 个字符的管理员密码后，可查看全部分析任务并执行受保护的管理操作；管理员会话默认持续 12 小时，也可通过 `session_hours` 调整。连续失败的登录会被临时限流。
+Each submission receives a separate `/results/<random-uuid>` URL. Cached computation may be reused when the same replay is analyzed again, but an existing result URL is never replaced. Result URLs act as capability links: they are not publicly enumerable, but anyone with the complete URL can open them. Share them accordingly.
 
-## 网络与安全
+The administrator page is available at `/admin` and is intentionally absent from public navigation. An administrator password of at least 12 characters grants access to all analysis tasks and protected management operations. Sessions last 12 hours by default, and repeated failed sign-in attempts are temporarily rate-limited.
 
-默认监听 `0.0.0.0:8765`，便于同一局域网中的设备访问。设定 `HAIUN_HOST=127.0.0.1` 可恢复仅本机访问；`HAIUN_PORT` 修改端口。公网部署必须在前方使用 TLS 反向代理，并配置适当的防火墙与请求限流；管理员密码只保护管理功能，不会把访客搜索、导入、分析或已分享的结果链接变成私有接口。
+## Network and Security
 
-CORS 默认不允许无关来源。仅在确有需要时设置逗号分隔的 `HAIUN_ALLOWED_ORIGINS`。雀魂账号密码与管理员密码仅由后端从本地 TOML 读取；它们不进入数据库、日志或错误响应。管理员会话 cookie 为 HTTP-only；数据库只保存随机会话令牌的哈希。OAuth token、邮件验证码和浏览器会话不会被请求或处理。
+Haiun listens on `0.0.0.0:8765` by default so other devices on the local network can connect. Common environment variables include:
 
-## 数据目录与删除
+| Variable                  | Purpose                                              | Default                      |
+| ------------------------- | ---------------------------------------------------- | ---------------------------- |
+| `HAIUN_HOST`            | Backend bind address                                 | `0.0.0.0`                  |
+| `HAIUN_PORT`            | Backend port                                         | `8765`                     |
+| `HAIUN_DATA_DIR`        | Local state directory                                | `./data`                   |
+| `HAIUN_CONFIG`          | Configuration file path                              | `./config/config.toml`     |
+| `HAIUN_ALLOWED_ORIGINS` | Comma-separated CORS allowlist                       | No unrelated origins allowed |
+| `HAIUN_OPEN_BROWSER`    | Open the production URL automatically when supported | `1`                        |
+| `HAIUN_REBUILD`         | Force a frontend rebuild when set to `1`           | `0`                        |
 
-默认状态目录是仓库下的 `data/`，包含 SQLite 数据库、原始牌谱、规范对局和缓存分析；该目录已被 Git 忽略。`HAIUN_DATA_DIR` 可覆盖路径。复制目录即可备份，停止服务后删除整个目录即可清空全部本地状态。
+Set `HAIUN_HOST=127.0.0.1` to restrict the service to the local machine.
 
-## 导入格式与限制
+Public deployments must use a TLS-terminating reverse proxy, an appropriate firewall policy, and request rate limiting. The administrator password protects management functionality only; it does not make visitor search, replay import, analysis, or shared result URLs private.
 
-单个文件最大 32 MiB。离线路径支持解码 JSON 与牌运规范 JSON；雀魂链接下载保存原始 `ResGameRecord` protobuf，并通过仓库内的麻将魂协议描述解码。可用 `scripts/update_majsoul_protocol.py` 从官方静态资源更新描述文件。可执行文件与归档文件会被拒绝。
+Mahjong Soul credentials and the administrator password are read only by the backend from the local TOML file. They are not written to the database, logs, or error responses. Administrator cookies are HTTP-only, and the database stores only hashes of random session tokens.
 
-Amae-Koromo 是非官方公开索引，其搜索和列表接口可能延迟或暂时不可用。完整牌谱获取依赖本地配置账号能否登录并访问目标牌谱；所有账号均失败时返回 `REPLAY_FETCH_UNAVAILABLE`，配置或网络问题会返回对应的类型化错误。
+## How the Luck Score Works
 
-## 牌运分数含义
+The `baseline-v1` algorithm compares each observed random result with the weighted expectation of all legal candidate results available at that moment. It accumulates the raw deviation and variance, calculates a z-score, and maps that value to a 0–100 score:
 
-`baseline-v1` 比较实际随机结果与当时合法候选结果的加权期望，先累加原始偏差与方差，再把 z-score 映射到 0–100：`50 + 15 × z`，并限制在 0–100。50 表示接近期望，较高表示随机机会更有利，较低表示更不利。它不是实力评分，也不是最终排名预测。
+```text
+luck score = clamp(50 + 15 × z, 0, 100)
+```
 
-起手分布使用固定种子 `20260713`，分别为四麻庄家、四麻闲家、三麻庄家、三麻闲家实际生成 50,000 个样本；庄家 14 张状态按最优合法弃牌后的形状评估。相同依赖版本、牌谱、算法版本和选项会得到相同结果。
+A score near 50 indicates results close to expectation. Higher values indicate more favorable random opportunities; lower values indicate less favorable ones. The score is not a skill rating and does not predict final placement.
 
-赤五、普通宝牌、杠宝牌、里宝牌、岭上牌和拔北按各自增量路径计算，避免在多个分量中重复。实战点数始终单独显示。
+Starting-hand calibration uses 50,000 generated samples with the fixed seed `20260713` for four-player dealer, four-player non-dealer, three-player dealer, and three-player non-dealer states. Dealer hands are evaluated after the best legal discard. Given identical dependency versions, replay data, algorithm version, and options, the analysis is deterministic.
 
-## 测试
+Red fives, visible dora, kan dora, ura dora, rinshan draws, and kita are evaluated through separate incremental paths to avoid double-counting. Match points remain separate from the luck score, and voluntary opponent discards never contribute to the main score.
+
+## Replay Data
+
+The default state directory is `data/`. It contains the SQLite database, raw replays, canonical game records, and cached analyses, and is ignored by Git. Set `HAIUN_DATA_DIR` to store this data elsewhere.
+
+To back up a local installation, copy the state directory. To remove all local state, stop Haiun and delete the directory.
+
+Uploaded replay files are limited to 32 MiB. Haiun accepts decoded JSON and canonical Haiun JSON. For Mahjong Soul links, it stores the original `ResGameRecord` protobuf and decodes it with the protocol descriptors included in this repository. The descriptors can be refreshed from official static assets with:
+
+```bash
+python scripts/update_majsoul_protocol.py
+```
+
+Executable files and archives are rejected.
+
+Amae-Koromo is an unofficial public index, so player search and game listings may be delayed or temporarily unavailable. Full replay access depends on whether a locally configured Mahjong Soul account can sign in and access the requested replay. If no account can retrieve it, Haiun returns `REPLAY_FETCH_UNAVAILABLE`; configuration and network failures use their corresponding typed errors.
+
+## Development
+
+The backend is built with FastAPI and SQLite. The frontend uses React, TypeScript, and Vite.
+
+Run the complete project checks with:
 
 ```bash
 nix develop -c .venv/bin/python -m pytest backend/tests -v
@@ -124,3 +183,15 @@ nix develop -c npm --prefix frontend run e2e
 bash -n scripts/dev.sh scripts/start.sh scripts/check_docker_deploy.sh
 nix develop -c shellcheck scripts/dev.sh scripts/start.sh scripts/check_docker_deploy.sh
 ```
+
+When changing translations, keep the recursive key structure of the `zh-CN` and `en` locale resources identical.
+
+## Acknowledgments
+
+Haiun uses the public player and game index provided by [SAPikachu/amae-koromo](https://github.com/SAPikachu/amae-koromo). Thanks to its maintainers and contributors for making this data accessible to the riichi mahjong community.
+
+## Important Notes
+
+- Haiun is an independent project and is not affiliated with Mahjong Soul or Amae-Koromo.
+- Luck analysis describes outcomes under a specific algorithm; it should not be interpreted as a complete evaluation of player decisions or ability.
+- Keep replay-fetch credentials local and never share configuration files containing secrets.
