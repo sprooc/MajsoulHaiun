@@ -29,6 +29,7 @@ export function HomePage() {
   const [selected, setSelected] = useState<RemotePlayer | null>(loadSelectedPlayer);
   const [games, setGames] = useState<RemoteGame[]>([]);
   const [gamesState, setGamesState] = useState<"idle" | "loading" | "error">("idle");
+  const [gamesErrorCode, setGamesErrorCode] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [recentImportMessage, setRecentImportMessage] = useState<string | null>(null);
@@ -41,6 +42,7 @@ export function HomePage() {
     setGamesState("loading");
     setGames([]);
     setNextCursor(null);
+    setGamesErrorCode(null);
     void listPlayerGames(selected, undefined, controller.signal)
       .then((page) => {
         setGames(page.games);
@@ -48,7 +50,9 @@ export function HomePage() {
         setGamesState("idle");
       })
       .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === "AbortError")) setGamesState("error");
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setGamesState("error");
+        setGamesErrorCode(error instanceof ApiError ? error.code : null);
       });
     return () => controller.abort();
   }, [selected]);
@@ -117,7 +121,15 @@ export function HomePage() {
             <p>{selected.nickname} · {selected.mode}</p>
           </div>
           {gamesState === "loading" ? <p className="empty-state">{t("playerSearch.loading")}</p> : <GameTable games={games} highlightedPlayerId={selected.externalId} onImport={(game) => void importRecentGame(game)} />}
-          {gamesState === "error" && <p className="inline-error">{t("replayImport.error")}</p>}
+          {gamesState === "error" && (
+            <p className="inline-error">
+              {gamesErrorCode === "AMAE_KOROMO_CAP_REQUIRED"
+                ? t("replayImport.capRequired")
+                : gamesErrorCode === "AMAE_KOROMO_RATE_LIMITED"
+                  ? t("replayImport.rateLimited")
+                  : t("replayImport.error")}
+            </p>
+          )}
           {recentImportMessage && <p className="inline-error" role="status">{recentImportMessage}</p>}
           {nextCursor !== null && <button className="load-more" type="button" disabled={loadingMore} onClick={() => void loadMoreGames()}>{t("gameTable.loadMore")}</button>}
         </section>

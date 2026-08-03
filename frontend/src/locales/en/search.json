@@ -45,6 +45,8 @@
     "queued": "Added to the analysis list. Please wait for completion.",
     "analysisFailed": "The replay was saved, but analysis could not complete.",
     "fetchUnavailable": "None of the configured Mahjong Soul accounts can access this replay. Check its permissions or import a local replay file.",
+    "capRequired": "Amae-Koromo requires a CAPTCHA token. Configure one in config.toml to enable game listing.",
+    "rateLimited": "Amae-Koromo is rate limited. Try again later.",
     "error": "Import failed. Check the file or link and try again."
   }
 }

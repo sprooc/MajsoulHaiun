@@ -78,7 +78,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(resolved.database_url)
     app.state.http_client = httpx.AsyncClient()
     source_registry = SourceRegistry()
-    source_registry.register(AmaeKoromoSource(app.state.http_client))
+    cap_token = None
+    if (ak := app.state.file_config.amae_koromo) and ak.cap_token:
+        cap_token = ak.cap_token.get_secret_value()
+    source_registry.register(AmaeKoromoSource(app.state.http_client, cap_token=cap_token))
     app.state.source_registry = source_registry
     algorithm_registry = AlgorithmRegistry()
     algorithm_registry.register(BaselineV1())

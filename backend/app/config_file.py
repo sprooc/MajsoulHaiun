@@ -10,6 +10,12 @@ class HaiunConfigError(Exception):
     pass
 
 
+class AmaeKoromoConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    cap_token: SecretStr | None = Field(default=None, repr=False)
+
+
 class AdminConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -21,6 +27,7 @@ class HaiunFileConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     majsoul: MajsoulFetchConfig | None = None
+    amae_koromo: AmaeKoromoConfig | None = None
     admin: AdminConfig | None = None
 
     @property
@@ -55,6 +62,13 @@ def load_haiun_config(path: Path, *, missing_ok: bool = False) -> HaiunFileConfi
         except ValidationError:
             pass
 
+    amae_koromo = None
+    if "amae_koromo" in raw:
+        try:
+            amae_koromo = AmaeKoromoConfig.model_validate(raw["amae_koromo"])
+        except ValidationError:
+            pass
+
     admin = None
     if "admin" in raw:
         try:
@@ -62,4 +76,4 @@ def load_haiun_config(path: Path, *, missing_ok: bool = False) -> HaiunFileConfi
         except ValidationError:
             pass
 
-    return HaiunFileConfig(majsoul=majsoul, admin=admin)
+    return HaiunFileConfig(majsoul=majsoul, amae_koromo=amae_koromo, admin=admin)

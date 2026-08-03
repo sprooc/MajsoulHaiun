@@ -11,6 +11,7 @@ export function PlayerSearch({ onSelect }: { onSelect?: (player: RemotePlayer) =
   const [mode, setMode] = useState<GameMode>(initial.mode);
   const [players, setPlayers] = useState<RemotePlayer[]>(initial.players);
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">(initial.state);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
 
   useEffect(() => {
     savePlayerSearchSession({
@@ -30,6 +31,7 @@ export function PlayerSearch({ onSelect }: { onSelect?: (player: RemotePlayer) =
       setState("done");
     } catch (error) {
       setState("error");
+      setErrorCode(error instanceof ApiError ? error.code : null);
       if (!(error instanceof ApiError)) throw error;
     }
   }
@@ -65,7 +67,15 @@ export function PlayerSearch({ onSelect }: { onSelect?: (player: RemotePlayer) =
           {state === "loading" ? t("playerSearch.loading") : t("playerSearch.submit")}
         </button>
       </form>
-      {state === "error" && <p className="inline-error">{t("replayImport.error")}</p>}
+      {state === "error" && (
+        <p className="inline-error">
+          {errorCode === "AMAE_KOROMO_CAP_REQUIRED"
+            ? t("replayImport.capRequired")
+            : errorCode === "AMAE_KOROMO_RATE_LIMITED"
+              ? t("replayImport.rateLimited")
+              : t("replayImport.error")}
+        </p>
+      )}
       {state === "done" && players.length === 0 && <p className="empty-state">{t("playerSearch.empty")}</p>}
       {players.length > 0 && (
         <ul className="player-results">

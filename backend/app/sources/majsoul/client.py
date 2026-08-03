@@ -263,7 +263,9 @@ class MajsoulClient:
         except (AttributeError, TypeError, ValueError) as exc:
             raise MajsoulProtocolError("Mahjong Soul login response was invalid.") from exc
         if error_code:
-            raise MajsoulLoginRejected("Mahjong Soul account login was rejected.")
+            raise MajsoulLoginRejected(
+                f"Mahjong Soul account login was rejected (error code {error_code})."
+            )
         if not access_token:
             raise MajsoulProtocolError("Mahjong Soul login response was invalid.")
 
@@ -288,7 +290,9 @@ class MajsoulClient:
         if error_code == 1203:
             raise MajsoulRecordUnavailable("Mahjong Soul replay is unavailable to this account.")
         if error_code:
-            raise MajsoulProtocolError(f"Mahjong Soul replay request failed with code {error_code}.")
+            raise MajsoulProtocolError(
+                f"Mahjong Soul replay request failed with code {error_code}."
+            )
         wrapper = pb.Wrapper(name=".lq.ResGameRecord", data=serialized)
         return wrapper.SerializeToString()
 

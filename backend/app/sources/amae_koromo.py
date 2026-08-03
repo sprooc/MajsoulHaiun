@@ -18,6 +18,7 @@ MODE_IDS = {
     GameMode.THREE_PLAYER: (26, 24, 22, 25, 23, 21),
 }
 EARLIEST_TIMESTAMP_MS = 1262304000000
+CAPTCHA_PATTERN = "[x-cap-token-required]"
 
 
 def _integer_list(value: object) -> list[int]:
@@ -57,16 +58,37 @@ class AmaeKoromoSource:
     id = "amae-koromo"
     capabilities = frozenset({SourceCapability.SEARCH_PLAYERS, SourceCapability.LIST_PLAYER_GAMES})
 
-    def __init__(self, client: httpx.AsyncClient):
+    def __init__(self, client: httpx.AsyncClient, *, cap_token: str | None = None):
         self.client = client
+        self.cap_token = cap_token
 
     async def _get_json(self, path: str) -> object:
+        headers: dict[str, str] = {}
+        if self.cap_token:
+            headers["x-cap-token"] = self.cap_token
         last_error: Exception | None = None
         for mirror in MIRRORS:
             try:
-                response = await self.client.get(mirror + path, timeout=5.0)
+                response = await self.client.get(mirror + path, timeout=5.0, headers=headers)
+                if response.status_code == 429:
+                    raise SourceUnavailable(
+                        "AMAE_KOROMO_RATE_LIMITED", "Amae-Koromo returned HTTP 429 (rate limited)."
+                    )
                 response.raise_for_status()
-                return response.json()
+                try:
+                    return response.json()
+                except ValueError:
+                    text = response.text
+                    if CAPTCHA_PATTERN in text:
+                        raise SourceUnavailable(
+                            "AMAE_KOROMO_CAP_REQUIRED",
+                            "Amae-Koromo requires a CAPTCHA token.",
+                        )
+                    raise SourceUnavailable(
+                        "AMAE_KOROMO_INVALID_RESPONSE", "Amae-Koromo returned non-JSON content."
+                    )
+            except SourceUnavailable:
+                raise
             except (httpx.TimeoutException, httpx.HTTPError) as exc:
                 last_error = exc
         raise SourceUnavailable("AMAE_KOROMO_UNAVAILABLE", "Amae-Koromo is temporarily unavailable.") from last_error

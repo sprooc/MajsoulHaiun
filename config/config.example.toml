@@ -1,5 +1,11 @@
 timeout_seconds = 15
 
+# The Amae-Koromo public index now requires a CAPTCHA token for the
+# player_records endpoint (used for listing recent games). Contact SAPikachu
+# to obtain a key, then uncomment and set cap_token below.
+# [amae_koromo]
+# cap_token = "your-captcha-token"
+
 # Mahjong Soul accounts are tried from top to bottom. Keep the real file local
 # and chmod 0600. These credentials are read only by the backend.
 [[accounts]]

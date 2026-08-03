@@ -45,6 +45,8 @@
     "queued": "已加入分析列表，请等待分析完成。",
     "analysisFailed": "牌谱已保存，但分析未能完成。",
     "fetchUnavailable": "已配置的雀魂账号均无法获取此牌谱。请检查牌谱权限，或改用本地牌谱文件导入。",
+    "capRequired": "Amae-Koromo 需要 CAPTCHA 令牌。请在 config.toml 中配置令牌以启用游戏列表。",
+    "rateLimited": "Amae-Koromo 访问受限，请稍后再试。",
     "error": "导入失败，请检查文件或链接后重试。"
   }
 }
