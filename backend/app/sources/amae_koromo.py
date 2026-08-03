@@ -65,7 +65,7 @@ class AmaeKoromoSource:
     async def _get_json(self, path: str) -> object:
         headers: dict[str, str] = {}
         if self.cap_token:
-            headers["x-cap-token"] = self.cap_token
+            headers["Authorization"] = f"Bearer {self.cap_token}"
         last_error: Exception | None = None
         for mirror in MIRRORS:
             try:
